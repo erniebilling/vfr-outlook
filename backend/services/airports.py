@@ -39,7 +39,7 @@ def search_airports(query: str, limit: int = 10) -> list[dict]:
     q = query.upper()
     results = []
     for ap in _load():
-        if ap["icao"].startswith(q) or q in ap["name"].upper():
+        if q in ap["icao"] or q in ap["name"].upper():
             results.append(ap)
             if len(results) >= limit:
                 break
