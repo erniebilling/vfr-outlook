@@ -7,9 +7,9 @@ import { useRegion } from './hooks/useRegion'
 
 export default function App() {
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
-  const [radius, setRadius] = useState(100)
+  const [radius, setRadius] = useState(115)   // 100 nm in miles
   const [maxAirports, setMaxAirports] = useState(20)
-  const [useNm, setUseNm] = useState(false)
+  const [useNm, setUseNm] = useState(true)
   const { data, isLoading, isError, error } = useRegion(selectedIcao, radius, maxAirports)
 
   return (
