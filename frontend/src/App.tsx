@@ -7,7 +7,8 @@ import { useRegion } from './hooks/useRegion'
 export default function App() {
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
   const [radius, setRadius] = useState(100)
-  const { data, isLoading, isError, error } = useRegion(selectedIcao, radius)
+  const [maxAirports, setMaxAirports] = useState(20)
+  const { data, isLoading, isError, error } = useRegion(selectedIcao, radius, maxAirports)
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -51,7 +52,9 @@ export default function App() {
           <RegionDashboard
             data={data}
             radius={radius}
-            onRadiusChange={(r) => setRadius(r)}
+            onRadiusChange={setRadius}
+            maxAirports={maxAirports}
+            onMaxAirportsChange={setMaxAirports}
           />
         )}
       </main>

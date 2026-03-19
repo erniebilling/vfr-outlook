@@ -7,6 +7,8 @@ interface Props {
   data: RegionResponse
   radius: number
   onRadiusChange: (r: number) => void
+  maxAirports: number
+  onMaxAirportsChange: (n: number) => void
 }
 
 function ScorePill({ score }: { score: number }) {
@@ -66,8 +68,9 @@ function AirportRow({
 }
 
 const RADIUS_OPTIONS = [50, 100, 150, 200, 300]
+const MAX_AIRPORTS_OPTIONS = [10, 20, 30, 50]
 
-export default function RegionDashboard({ data, radius, onRadiusChange }: Props) {
+export default function RegionDashboard({ data, radius, onRadiusChange, maxAirports, onMaxAirportsChange }: Props) {
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
 
   const selectedAirport = data.airports.find((a) => a.icao === selectedIcao) ?? null
@@ -78,22 +81,40 @@ export default function RegionDashboard({ data, radius, onRadiusChange }: Props)
   return (
     <div className="space-y-4">
       {/* Controls */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-gray-400 text-sm">Radius:</span>
-        {RADIUS_OPTIONS.map((r) => (
-          <button
-            key={r}
-            onClick={() => onRadiusChange(r)}
-            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-              radius === r
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-            }`}
-          >
-            {r} mi
-          </button>
-        ))}
-        <span className="text-gray-600 text-sm ml-2">{data.airport_count} airports</span>
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-sm">Radius:</span>
+          {RADIUS_OPTIONS.map((r) => (
+            <button
+              key={r}
+              onClick={() => onRadiusChange(r)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                radius === r
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {r} mi
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-sm">Max airports:</span>
+          {MAX_AIRPORTS_OPTIONS.map((n) => (
+            <button
+              key={n}
+              onClick={() => onMaxAirportsChange(n)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                maxAirports === n
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <span className="text-gray-600 text-sm">{data.airport_count} shown</span>
       </div>
 
       {/* Grid */}

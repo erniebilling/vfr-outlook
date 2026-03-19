@@ -7,9 +7,9 @@ from services.airports import get_airport, search_airports as db_search, airport
 
 router = APIRouter(prefix="/api/v1", tags=["airport"])
 
-# Maximum airports fetched in a region call to keep response times reasonable
-_MAX_REGION_AIRPORTS = 20
 _DEFAULT_RADIUS = 100  # miles
+_DEFAULT_MAX_AIRPORTS = 20
+_HARD_MAX_AIRPORTS = 50  # cap to keep response times reasonable
 
 
 @router.get("/airport/{icao}/forecast", response_model=AirportForecast)
@@ -34,6 +34,7 @@ async def airport_forecast(icao: str):
 async def region_forecast(
     icao: str = Query(..., min_length=3, max_length=4, description="Center airport ICAO"),
     radius: int = Query(_DEFAULT_RADIUS, ge=25, le=300, description="Radius in miles"),
+    max_airports: int = Query(_DEFAULT_MAX_AIRPORTS, ge=1, le=_HARD_MAX_AIRPORTS, description="Maximum number of airports to return (including base)"),
 ):
     """
     Return 14-day forecasts for all airports within `radius` miles of `icao`.
@@ -52,7 +53,7 @@ async def region_forecast(
         max_results=200,  # oversample, then filter
         exclude_icao=icao,
     )
-    nearby = [a for a in nearby_all if a["icao"].startswith("K")][:_MAX_REGION_AIRPORTS - 1]
+    nearby = [a for a in nearby_all if a["icao"].startswith("K")][:max_airports - 1]
 
     # Build list: base first, then nearby
     all_airports = [
