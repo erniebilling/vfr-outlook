@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from models.forecast import AirportForecast, RegionResponse
 from services.weather import get_airport_forecast
 from services.airports import get_airport, search_airports as db_search, airports_within_radius
+from services.scorer import DEFAULT_CRITERIA
 
 router = APIRouter(prefix="/api/v1", tags=["airport"])
 
@@ -97,3 +98,34 @@ async def search_airports(q: str = Query(..., min_length=2)):
     """Full-text search over OurAirports database. Returns ICAO + name."""
     results = db_search(q, limit=10)
     return [{"icao": a["icao"], "name": a["name"]} for a in results]
+
+
+@router.get("/scoring-params")
+async def scoring_params():
+    """Return the current VFR scoring parameters and weights."""
+    return {
+        "criteria": {
+            "max_wind_kt": DEFAULT_CRITERIA.max_wind_kt,
+            "min_vis_sm": DEFAULT_CRITERIA.min_vis_sm,
+            "min_ceiling_ft": DEFAULT_CRITERIA.min_ceiling_ft,
+            "max_precip_pct": DEFAULT_CRITERIA.max_precip_pct,
+        },
+        "weights": {
+            "wind": 0.30,
+            "visibility": 0.25,
+            "ceiling": 0.25,
+            "precip": 0.20,
+        },
+        "score_thresholds": {
+            "vfr": 85,
+            "mvfr": 65,
+            "marginal": 45,
+            "poor": 25,
+        },
+        "scoring_ranges": {
+            "wind_kt":     {"perfect": 10,   "zero": 25},
+            "vis_sm":      {"perfect": 10,   "zero": 1},
+            "ceiling_ft":  {"perfect": 5000, "zero": 500},
+            "precip_pct":  {"perfect": 0,    "zero": 40},
+        },
+    }

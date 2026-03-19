@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import SearchBar from './components/SearchBar'
 import LegendBar from './components/LegendBar'
+import ScoringPanel from './components/ScoringPanel'
 import RegionDashboard from './components/RegionDashboard'
 import { useRegion } from './hooks/useRegion'
 
@@ -24,6 +25,7 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
         <LegendBar />
+        <ScoringPanel />
 
         {!selectedIcao && (
           <div className="text-center py-20 text-gray-500">
