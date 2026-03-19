@@ -1,219 +1,157 @@
-# VFR Weather Alert System for RV7 Flying
+# VFR Watch
 
-An automated weather monitoring system that alerts you when conditions are ideal for VFR flying in Oregon and California.
+A 14-day VFR probability dashboard for GA pilots. Enter any US airport ICAO code and instantly see color-coded flying conditions for every airport within your chosen radius — no account, no login, no fluff.
 
-## Features
+## What it does
 
-- ✈️ Monitors multiple airports along your typical routes
-- 🌤️ Checks for favorable VFR conditions (light winds, good visibility, high ceilings)
-- 📊 Uses official aviation weather data (METAR/TAF from aviationweather.gov)
-- 🔔 Desktop notifications when conditions are good
-- 📧 Optional email alerts
-- ⚙️ Customizable thresholds for wind, visibility, and ceiling
+- **Regional heatmap** — airport × day grid showing VFR scores 0–100 for up to 20 airports at once
+- **Radius selector** — 50 / 100 / 150 / 200 / 300 miles from your base airport
+- **Full airport database** — ~12,000 US public airports (OurAirports), not just a hardcoded list
+- **14-day horizon** — days 0–7 from NOAA hourly aviation forecasts, days 8–14 from Open-Meteo ensemble models
+- **Current METAR** — today's score is always anchored to the latest observation
+- **Detail drill-down** — click any airport row to expand wind, visibility, ceiling, precip, and confidence
 
-## Weather Criteria
+## Scoring
 
-The system alerts you when ALL of the following conditions are met:
+Each day gets a 0–100 VFR probability score:
 
-- **Winds:** ≤ 15 knots (including gusts)
-- **Visibility:** ≥ 5 statute miles
-- **Ceiling:** > 3,000 ft AGL or clear/high overcast
-- **Flight Category:** VFR or MVFR
+| Score | Label    | Color  | Meaning                        |
+|-------|----------|--------|-------------------------------|
+| 85–100 | VFR     | Green  | Good day to fly               |
+| 65–84  | MVFR    | Lime   | Marginal but likely flyable   |
+| 45–64  | Marginal | Yellow | Borderline — check carefully  |
+| 25–44  | Poor     | Orange | Likely not flyable VFR        |
+| 0–24   | IFR     | Red    | Not VFR                       |
 
-## Quick Start
+Score weights: wind 30% · visibility 25% · ceiling 25% · precipitation 20%
 
-### 1. Install Python Dependencies
+Confidence tiers reflect data source age: **high** (days 0–3, NOAA), **medium** (days 4–7, NOAA), **low** (days 8–14, Open-Meteo).
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Browser (React + TypeScript + Tailwind)                │
+│                                                         │
+│  SearchBar → useRegion hook → RegionDashboard grid      │
+│                             → ForecastTable (on click)  │
+└─────────────────────┬───────────────────────────────────┘
+                      │  /api/v1/region?icao=KBDN&radius=100
+                      ▼
+┌─────────────────────────────────────────────────────────┐
+│  FastAPI (Python)                                       │
+│                                                         │
+│  GET /api/v1/region          haversine radius search    │
+│  GET /api/v1/airport/{icao}  single airport forecast    │
+│  GET /api/v1/airports/search full-text ICAO search      │
+└─────────┬──────────────────────────┬────────────────────┘
+          │                          │
+          ▼                          ▼
+ aviationweather.gov          Open-Meteo API
+ - METAR (current obs)        - Hourly wind / cloud / precip
+ - NOAA hourly forecasts        extended 16-day model
+   (days 0–7)                   (days 0–16)
+```
+
+## Running locally
+
+### Prerequisites
+
+- Python 3.12+
+- Node 22+
+
+### Backend
 
 ```bash
-pip install requests --break-system-packages
+pip install -r backend/requirements.txt
+cd backend
+python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-For desktop notifications on macOS, no additional packages needed (uses osascript).
-For Linux, ensure `notify-send` is installed (usually comes with desktop environments).
-For Windows, install: `pip install win10toast`
+API available at `http://localhost:8000` · Swagger UI at `http://localhost:8000/docs`
 
-### 2. Test the System
-
-Run manually to check current conditions:
+### Frontend
 
 ```bash
-python3 vfr_weather_alert.py
+cd frontend
+npm install
+npm run dev
 ```
 
-You should see a report of weather conditions at all configured airports.
+App available at `http://localhost:5173`
 
-### 3. Customize Your Airports
+The Vite dev server proxies all `/api` requests to the backend automatically.
 
-Edit `config.py` to add/remove airports or adjust thresholds:
+### Dev container (VS Code)
 
-```python
-AIRPORTS = [
-    "KBDN",  # Bend, OR
-    "KEUG",  # Eugene, OR
-    # Add your frequently visited airports
-]
+Open the repo in VS Code and choose **Reopen in Container**. Dependencies install automatically via `postCreateCommand`. Ports 8000 and 5173 are forwarded to your host.
 
-MAX_WIND_SPEED = 15  # Adjust based on your comfort level
-```
+## API reference
 
-## Setup Options
+### `GET /api/v1/region`
 
-### Option 1: Manual Checks
+Returns 14-day forecasts for all K-prefix airports within a radius of a center airport.
 
-Run whenever you're planning a flight:
+| Parameter | Type | Default | Range | Description |
+|-----------|------|---------|-------|-------------|
+| `icao` | string | required | — | Center airport (e.g. `KBDN`) |
+| `radius` | int | 100 | 25–300 | Search radius in miles |
 
-```bash
-python3 vfr_weather_alert.py
-```
+Response: `RegionResponse` with up to 20 airports, each containing 14 `DayForecast` objects.
 
-### Option 2: Scheduled Checks with Cron
+### `GET /api/v1/airport/{icao}/forecast`
 
-Set up automated alerts using cron. Edit your crontab:
+Single airport 14-day forecast.
 
-```bash
-crontab -e
-```
+### `GET /api/v1/airports/search?q=`
 
-Add one of these lines:
+Full-text search over ~12,000 US public airports. Returns `[{icao, name}]`.
 
-```bash
-# Check every morning at 6 AM
-0 6 * * * cd /path/to/weather-alerts && python3 vfr_weather_alert.py >> weather_alerts.log 2>&1
+## Data sources
 
-# Check every 3 hours (6 AM, 9 AM, 12 PM, 3 PM, 6 PM)
-0 6,9,12,15,18 * * * cd /path/to/weather-alerts && python3 vfr_weather_alert.py >> weather_alerts.log 2>&1
+| Source | Coverage | Used for |
+|--------|----------|---------|
+| [aviationweather.gov](https://aviationweather.gov/api/data/metar) | Real-time METAR | Current conditions (day 0) |
+| [api.weather.gov](https://api.weather.gov) | NOAA NWS hourly | Days 0–7 |
+| [open-meteo.com](https://open-meteo.com) | Global ensemble | Days 0–16 fallback / extension |
+| [OurAirports](https://ourairports.com/data/) | 12,000 US airports | Airport database + coordinates |
 
-# Desktop notification every 3 hours
-0 */3 * * * cd /path/to/weather-alerts && DISPLAY=:0 python3 vfr_weather_alert_desktop.py
-```
+All external APIs are free and require no API key.
 
-### Option 3: Email Alerts
-
-If you have mail configured on your system:
-
-```bash
-# Email yourself at 6 AM and noon
-0 6,12 * * * cd /path/to/weather-alerts && python3 vfr_weather_alert.py | mail -s "VFR Weather Alert" your-email@example.com
-```
-
-### Option 4: SMS Alerts via Email-to-SMS
-
-Most carriers offer email-to-SMS gateways:
-
-- AT&T: number@txt.att.net
-- T-Mobile: number@tmomail.net
-- Verizon: number@vtext.com
-- Sprint: number@messaging.sprintpcs.com
-
-```bash
-0 6 * * * cd /path/to/weather-alerts && python3 vfr_weather_alert.py | mail -s "Flying Weather" 5551234567@txt.att.net
-```
-
-## Configured Airports
-
-The default configuration includes these airports along the Oregon-California corridor:
-
-**Oregon:**
-- KBDN - Bend Municipal
-- KEUG - Eugene/Mahlon Sweet
-- KPDX - Portland International
-- KSLE - Salem/McNary Field
-- KOTH - North Bend/Southwest Oregon Regional
-- KMFR - Medford/Rogue Valley International
-
-**California:**
-- KSMF - Sacramento International
-- KSFO - San Francisco International
-- KSNS - Salinas Municipal
-- KOAK - Oakland International
-- KSAC - Sacramento Executive
-- KSTS - Santa Rosa/Charles M. Schulz
-
-## Advanced Customization
-
-### Adjust Weather Thresholds
-
-For your RV7, you might want to adjust thresholds based on your experience and comfort level:
-
-```python
-# In vfr_weather_alert.py, modify check_vfr_conditions():
-
-MAX_WIND_SPEED = 12  # More conservative for crosswinds
-MIN_VISIBILITY = 7   # Better for scenic flights
-MIN_CEILING = 5000   # For mountain flying
-```
-
-### Add Density Altitude Checks
-
-Modify the script to calculate density altitude and warn about high DA conditions (important for performance).
-
-### Filter by Wind Direction
-
-Add logic to check crosswind components for specific runways at your departure airport.
-
-## Understanding the Output
-
-The alert includes:
+## Project layout
 
 ```
-🟢 GOOD FLYING CONDITIONS AT:
-
-  KBDN:
-    Wind: 8 kt
-    Visibility: 10 miles
-    Ceiling: Unlimited
-    Flight Category: VFR
-    METAR: KBDN 161453Z 27008KT 10SM CLR 15/01 A3015
-
-🔴 CONDITIONS NOT MET AT:
-
-  KSFO:
-    - Winds too strong: 22 knots
-    - Ceiling too low: 1200 ft
+vfr-watch/
+├── backend/
+│   ├── main.py                  FastAPI app + CORS
+│   ├── routers/airport.py       API endpoints
+│   ├── services/
+│   │   ├── airports.py          OurAirports DB + haversine search
+│   │   ├── weather.py           METAR / NOAA / Open-Meteo fetching
+│   │   └── scorer.py            VFR scoring algorithm
+│   ├── models/forecast.py       Pydantic response models
+│   ├── data/airports_us.json    11,864 US public airports
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx              Root component + layout
+│   │   ├── components/
+│   │   │   ├── RegionDashboard.tsx  Airport × day heatmap grid
+│   │   │   ├── ForecastTable.tsx    Single airport 14-day detail
+│   │   │   ├── SearchBar.tsx        ICAO search with autocomplete
+│   │   │   ├── ScoreCell.tsx        Color-coded score badge
+│   │   │   └── LegendBar.tsx        Score legend
+│   │   ├── hooks/
+│   │   │   ├── useRegion.ts     React Query hook for region endpoint
+│   │   │   └── useForecast.ts   React Query hook for single airport
+│   │   ├── types/forecast.ts    TypeScript interfaces
+│   │   └── lib/score.ts         Score colors, labels, date formatting
+│   ├── vite.config.ts
+│   ├── tailwind.config.js
+│   └── package.json
+└── .devcontainer/devcontainer.json
 ```
 
-## Important Notes for RV7 Pilots
+## Safety notice
 
-1. **Always check NOTAMs** before flight, even if weather is good
-2. **Verify winds aloft** - surface winds may be calm but upper winds can affect your flight
-3. **Check density altitude** on hot days, especially at higher elevation airports
-4. **Mountain flying** - Consider higher minimums for mountain routes
-5. **Marine layer** - Coastal California airports often have morning fog/low clouds
-6. **Afternoon thunderstorms** - Common in summer months
-7. **TFRs** - Check for temporary flight restrictions, especially in California
-
-## Troubleshooting
-
-**Script returns no data:**
-- Check internet connection
-- Verify airport codes are correct (must be ICAO format, e.g., KBDN not just BND)
-- aviationweather.gov API may be temporarily unavailable
-
-**Desktop notifications not working:**
-- macOS: Ensure Terminal/iTerm has notification permissions
-- Linux: Install libnotify-bin (`sudo apt install libnotify-bin`)
-- Windows: Install win10toast (`pip install win10toast`)
-
-**Cron job not running:**
-- Use full paths in crontab
-- Check system logs: `grep CRON /var/log/syslog`
-- Ensure script is executable: `chmod +x vfr_weather_alert.py`
-
-## Data Source
-
-Weather data is sourced from the official Aviation Weather Center (aviationweather.gov), which provides the same METAR and TAF data used for flight planning.
-
-## Safety Disclaimer
-
-This tool is intended as a convenience for initial weather screening only. Always:
-- Check official weather briefings before flight
-- Get a full briefing from Flight Service or approved sources
-- Check NOTAMs, TFRs, and other airspace restrictions
-- Make your own pilot-in-command decisions
-- Never rely solely on automated alerts for flight planning
-
-Blue skies and tailwinds! ✈️
-
-## License
-
-Free to use and modify for personal aviation use.
+VFR Watch is a planning aid only. Always obtain a full weather briefing from Flight Service (1-800-WX-BRIEF) or [1800wxbrief.com](https://www.1800wxbrief.com) before flight. Check NOTAMs and TFRs. You are PIC — the final go/no-go decision is always yours.
