@@ -8,7 +8,7 @@ import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from models.forecast import DayForecast, AirportForecast, Advisory
+from models.forecast import DayForecast, AirportForecast, Advisory, Runway
 from services.scorer import compute_vfr_score
 from services.advisories import get_advisories_for_point
 
@@ -272,6 +272,8 @@ async def get_airport_forecast(
     lon: float,
     elevation_ft: Optional[int] = None,
     distance_miles: Optional[float] = None,
+    runways: Optional[list[dict]] = None,
+    max_rwy_ft: Optional[int] = None,
 ) -> AirportForecast:
     """Fetch all weather data for one airport and return a complete AirportForecast."""
     async with httpx.AsyncClient() as client:
@@ -297,6 +299,8 @@ async def get_airport_forecast(
     raw_advisories = await get_advisories_for_point(lat, lon)
     advisories = [Advisory(**a) for a in raw_advisories]
 
+    rwy_models = [Runway(**r) for r in (runways or [])]
+
     return AirportForecast(
         icao=icao,
         name=name,
@@ -304,6 +308,8 @@ async def get_airport_forecast(
         lon=lon,
         elevation_ft=elevation_ft,
         distance_miles=distance_miles,
+        runways=rwy_models,
+        max_rwy_ft=max_rwy_ft,
         current_metar=current_metar_str,
         current_score=current_score,
         daily_forecasts=daily,

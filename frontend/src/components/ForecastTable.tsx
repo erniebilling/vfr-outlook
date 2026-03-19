@@ -1,4 +1,4 @@
-import type { AirportForecast, DayForecast, Advisory } from '../types/forecast'
+import type { AirportForecast, DayForecast, Advisory, Runway } from '../types/forecast'
 import { formatDate, confidenceBadge, scoreLabel } from '../lib/score'
 import ScoreCell from './ScoreCell'
 
@@ -59,6 +59,25 @@ function AdvisoryPanel({ advisories }: { advisories: Advisory[] }) {
   )
 }
 
+function RunwayPanel({ runways }: { runways: Runway[] }) {
+  if (!runways.length) return null
+  return (
+    <div className="space-y-1.5">
+      <div className="text-sm font-semibold text-gray-300">Runways</div>
+      <div className="flex flex-wrap gap-2">
+        {runways.map((rw, i) => (
+          <div key={i} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 space-y-0.5">
+            <div className="font-mono font-bold text-white">{rw.le}/{rw.he}</div>
+            {rw.length_ft && <div>{rw.length_ft.toLocaleString()} ft{rw.width_ft ? ` × ${rw.width_ft} ft` : ''}</div>}
+            {rw.surface && <div className="text-gray-500">{rw.surface}</div>}
+            <div className="text-gray-500">{rw.lighted ? '💡 Lighted' : 'No lights'}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function ForecastTable({ data }: Props) {
   return (
     <div className="bg-gray-900 rounded-xl p-6 space-y-4">
@@ -70,6 +89,9 @@ export default function ForecastTable({ data }: Props) {
           <span className="text-gray-500 text-sm">{data.elevation_ft.toLocaleString()} ft MSL</span>
         )}
       </div>
+
+      {/* Runways */}
+      <RunwayPanel runways={data.runways} />
 
       {/* Active advisories */}
       <AdvisoryPanel advisories={data.advisories} />

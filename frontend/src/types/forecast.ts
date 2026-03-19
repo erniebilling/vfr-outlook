@@ -25,6 +25,16 @@ export interface DayForecast {
   issues: string[]
 }
 
+export interface Runway {
+  le: string
+  he: string
+  length_ft: number | null
+  width_ft: number | null
+  surface: string | null
+  lighted: boolean
+  headings: number[]
+}
+
 export interface AirportForecast {
   icao: string
   name: string
@@ -32,6 +42,8 @@ export interface AirportForecast {
   lon: number
   elevation_ft: number | null
   distance_miles: number | null
+  runways: Runway[]
+  max_rwy_ft: number | null
   current_metar: string | null
   current_score: number
   daily_forecasts: DayForecast[]

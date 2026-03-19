@@ -28,6 +28,8 @@ async def airport_forecast(icao: str):
         lon=info["lon"],
         elevation_ft=info.get("elev"),
         distance_miles=None,
+        runways=info.get("runways", []),
+        max_rwy_ft=info.get("max_rwy_ft"),
     )
 
 
@@ -59,11 +61,8 @@ async def region_forecast(
 
     # Build list: base first, then nearby
     all_airports = [
-        {"icao": base["icao"], "name": base["name"], "lat": base["lat"],
-         "lon": base["lon"], "elev": base.get("elev"), "distance_miles": 0.0},
-        *[{"icao": a["icao"], "name": a["name"], "lat": a["lat"],
-           "lon": a["lon"], "elev": a.get("elev"), "distance_miles": a["distance_miles"]}
-          for a in nearby],
+        base | {"distance_miles": 0.0},
+        *[a for a in nearby],
     ]
 
     # Fetch all forecasts concurrently
@@ -74,7 +73,9 @@ async def region_forecast(
             lat=a["lat"],
             lon=a["lon"],
             elevation_ft=a.get("elev"),
-            distance_miles=a["distance_miles"],
+            distance_miles=a.get("distance_miles"),
+            runways=a.get("runways", []),
+            max_rwy_ft=a.get("max_rwy_ft"),
         )
         for a in all_airports
     ]

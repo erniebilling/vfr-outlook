@@ -27,6 +27,16 @@ class DayForecast(BaseModel):
     issues: list[str]
 
 
+class Runway(BaseModel):
+    le: str
+    he: str
+    length_ft: Optional[int]
+    width_ft: Optional[int]
+    surface: Optional[str]
+    lighted: bool
+    headings: list[float]
+
+
 class AirportForecast(BaseModel):
     icao: str
     name: str
@@ -34,6 +44,8 @@ class AirportForecast(BaseModel):
     lon: float
     elevation_ft: Optional[int]
     distance_miles: Optional[float]     # None for the base airport itself
+    runways: list[Runway] = []
+    max_rwy_ft: Optional[int]
     current_metar: Optional[str]
     current_score: float
     daily_forecasts: list[DayForecast]  # 14 items
