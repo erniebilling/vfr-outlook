@@ -1,7 +1,23 @@
 import { useState } from 'react'
-import type { RegionResponse, AirportForecast, DayForecast } from '../types/forecast'
+import type { RegionResponse, AirportForecast, DayForecast, Advisory } from '../types/forecast'
 import { scoreBgClass, scoreLabel, formatDate } from '../lib/score'
 import ForecastTable from './ForecastTable'
+
+function AdvisoryBadges({ advisories }: { advisories: Advisory[] }) {
+  if (!advisories.length) return null
+  const hasSigmet = advisories.some(a => a.type === 'SIGMET')
+  const hasConv   = advisories.some(a => a.hazard === 'conv')
+  const hasTurb   = advisories.some(a => a.hazard.startsWith('turb'))
+  const hasLlws   = advisories.some(a => a.hazard === 'llws')
+  return (
+    <div className="flex gap-1 flex-wrap mt-0.5">
+      {hasSigmet && <span className="text-xs bg-red-600 text-white rounded px-1 py-0.5 font-bold">SIGMET</span>}
+      {hasConv   && <span className="text-xs bg-orange-500 text-white rounded px-1 py-0.5">CONV</span>}
+      {hasTurb   && <span className="text-xs bg-yellow-500 text-gray-900 rounded px-1 py-0.5">TURB</span>}
+      {hasLlws   && <span className="text-xs bg-purple-500 text-white rounded px-1 py-0.5">LLWS</span>}
+    </div>
+  )
+}
 
 interface Props {
   data: RegionResponse
@@ -47,6 +63,7 @@ function AirportRow({
         {airport.distance_miles != null && airport.distance_miles > 0 && (
           <div className="text-gray-600 text-xs">{airport.distance_miles} mi</div>
         )}
+        <AdvisoryBadges advisories={airport.advisories} />
       </td>
 
       {/* Current score */}

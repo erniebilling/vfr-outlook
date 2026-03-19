@@ -1,6 +1,16 @@
 export type Confidence = 'high' | 'medium' | 'low'
 export type ForecastSource = 'metar' | 'noaa_hourly' | 'open_meteo'
 
+export interface Advisory {
+  type: 'AIRMET' | 'SIGMET'
+  hazard: string
+  label: string
+  severity: string
+  altitude: string
+  valid_until: string | null
+  raw: string | null
+}
+
 export interface DayForecast {
   date: string
   vfr_score: number
@@ -25,6 +35,7 @@ export interface AirportForecast {
   current_metar: string | null
   current_score: number
   daily_forecasts: DayForecast[]
+  advisories: Advisory[]
 }
 
 export interface RegionResponse {

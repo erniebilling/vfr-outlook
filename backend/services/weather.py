@@ -8,8 +8,9 @@ import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from models.forecast import DayForecast, AirportForecast
+from models.forecast import DayForecast, AirportForecast, Advisory
 from services.scorer import compute_vfr_score
+from services.advisories import get_advisories_for_point
 
 
 AVIATION_WEATHER_BASE = "https://aviationweather.gov/api/data"
@@ -292,6 +293,10 @@ async def get_airport_forecast(
     if current_day and daily:
         daily[0] = current_day
 
+    # Active AIRMETs/SIGMETs
+    raw_advisories = await get_advisories_for_point(lat, lon)
+    advisories = [Advisory(**a) for a in raw_advisories]
+
     return AirportForecast(
         icao=icao,
         name=name,
@@ -302,4 +307,5 @@ async def get_airport_forecast(
         current_metar=current_metar_str,
         current_score=current_score,
         daily_forecasts=daily,
+        advisories=advisories,
     )

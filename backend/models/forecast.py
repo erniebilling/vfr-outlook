@@ -3,6 +3,16 @@ from typing import Literal, Optional
 from datetime import datetime
 
 
+class Advisory(BaseModel):
+    type: Literal["AIRMET", "SIGMET"]
+    hazard: str          # e.g. "turb-hi", "conv"
+    label: str           # human-readable, e.g. "Turbulence (High)"
+    severity: str        # "MOD", "SEV", "SIGMET", etc.
+    altitude: str        # e.g. "FL180–FL360" or "0–16,000 ft"
+    valid_until: Optional[str]   # "2230Z"
+    raw: Optional[str]   # raw text for SIGMETs
+
+
 class DayForecast(BaseModel):
     date: str                          # "2026-03-20"
     vfr_score: float                   # 0-100
@@ -27,6 +37,7 @@ class AirportForecast(BaseModel):
     current_metar: Optional[str]
     current_score: float
     daily_forecasts: list[DayForecast]  # 14 items
+    advisories: list[Advisory] = []     # active AIRMETs/SIGMETs
 
 
 class RegionResponse(BaseModel):

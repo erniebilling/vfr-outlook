@@ -1,4 +1,4 @@
-import type { AirportForecast, DayForecast } from '../types/forecast'
+import type { AirportForecast, DayForecast, Advisory } from '../types/forecast'
 import { formatDate, confidenceBadge, scoreLabel } from '../lib/score'
 import ScoreCell from './ScoreCell'
 
@@ -22,6 +22,43 @@ function DayDetail({ day }: { day: DayForecast }) {
   )
 }
 
+const ADVISORY_STYLE: Record<string, string> = {
+  SIGMET: 'bg-red-900/40 border-red-700/50 text-red-300',
+  conv:   'bg-orange-900/40 border-orange-700/50 text-orange-300',
+  turb:   'bg-yellow-900/40 border-yellow-700/50 text-yellow-200',
+  'turb-hi': 'bg-yellow-900/40 border-yellow-700/50 text-yellow-200',
+  'turb-lo': 'bg-yellow-900/40 border-yellow-700/50 text-yellow-200',
+  llws:   'bg-purple-900/40 border-purple-700/50 text-purple-200',
+}
+
+function advisoryStyle(a: Advisory): string {
+  if (a.type === 'SIGMET') return ADVISORY_STYLE.SIGMET
+  return ADVISORY_STYLE[a.hazard] ?? 'bg-gray-800 border-gray-700 text-gray-300'
+}
+
+function AdvisoryPanel({ advisories }: { advisories: Advisory[] }) {
+  if (!advisories.length) return null
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-semibold text-gray-300">Active Advisories</div>
+      {advisories.map((a, i) => (
+        <div key={i} className={`border rounded-lg px-4 py-3 ${advisoryStyle(a)}`}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-sm">{a.type}</span>
+            <span className="font-medium">{a.label}</span>
+            {a.severity && <span className="text-xs opacity-75">{a.severity}</span>}
+            {a.altitude  && <span className="text-xs opacity-75">{a.altitude}</span>}
+            {a.valid_until && <span className="text-xs opacity-60">until {a.valid_until}</span>}
+          </div>
+          {a.raw && (
+            <div className="mt-2 font-mono text-xs opacity-70 break-all">{a.raw}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function ForecastTable({ data }: Props) {
   return (
     <div className="bg-gray-900 rounded-xl p-6 space-y-4">
@@ -33,6 +70,9 @@ export default function ForecastTable({ data }: Props) {
           <span className="text-gray-500 text-sm">{data.elevation_ft.toLocaleString()} ft MSL</span>
         )}
       </div>
+
+      {/* Active advisories */}
+      <AdvisoryPanel advisories={data.advisories} />
 
       {/* Current METAR */}
       {data.current_metar && (
