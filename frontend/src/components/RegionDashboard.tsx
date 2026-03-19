@@ -71,9 +71,8 @@ function AdvisoryBadges({ advisories }: { advisories: Advisory[] }) {
 const MI_TO_NM = 0.868976
 const NM_TO_MI = 1.15078
 
-// Canonical radius options in NM; converted to miles for the API
-const RADIUS_OPTIONS_NM = [50, 100, 150, 200, 250]
-const RADIUS_OPTIONS_MI = RADIUS_OPTIONS_NM.map(nm => Math.round(nm * NM_TO_MI))
+// Radius option values — displayed as-is, interpreted per the unit toggle
+const RADIUS_OPTIONS = [50, 100, 150, 200, 250]
 
 function fmtDist(miles: number, useNm: boolean): string {
   if (useNm) return `${Math.round(miles * MI_TO_NM)} nm`
@@ -165,19 +164,19 @@ export default function RegionDashboard({ data, radius, onRadiusChange, maxAirpo
       <div className="flex items-center gap-4 flex-wrap">
         <div className="flex items-center gap-2">
           <span className="text-gray-400 text-sm">Radius:</span>
-          {RADIUS_OPTIONS_NM.map((nm, i) => {
-            const mi = RADIUS_OPTIONS_MI[i]
+          {RADIUS_OPTIONS.map((r) => {
+            const rMi = useNm ? Math.round(r * NM_TO_MI) : r
             return (
               <button
-                key={nm}
-                onClick={() => onRadiusChange(mi)}
+                key={r}
+                onClick={() => onRadiusChange(rMi)}
                 className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
-                  radius === mi
+                  radius === rMi
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
-                {nm} nm
+                {r}
               </button>
             )
           })}
