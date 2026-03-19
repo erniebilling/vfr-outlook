@@ -3,6 +3,55 @@ import type { RegionResponse, AirportForecast, DayForecast, Advisory } from '../
 import { scoreBgClass, scoreLabel, formatDate } from '../lib/score'
 import ForecastTable from './ForecastTable'
 
+function WeatherTooltip({ day, icao }: { day: DayForecast; icao: string }) {
+  return (
+    <div className="absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl text-xs text-left pointer-events-none">
+      <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between gap-2">
+        <span className="font-mono font-bold text-blue-400">{icao}</span>
+        <span className="text-gray-400">{formatDate(day.date)}</span>
+      </div>
+      <div className="px-3 py-2 space-y-1 text-gray-300">
+        <div className="flex justify-between">
+          <span className="text-gray-500">Score</span>
+          <span className={`font-bold ${scoreLabel(day.vfr_score) === 'VFR' ? 'text-green-400' : scoreLabel(day.vfr_score) === 'MVFR' ? 'text-lime-400' : 'text-orange-400'}`}>
+            {day.vfr_score.toFixed(0)} — {scoreLabel(day.vfr_score)}
+          </span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-500">Wind</span>
+          <span>{day.wind_kt.toFixed(0)} kt{day.gust_kt > 0 ? ` G${day.gust_kt.toFixed(0)}` : ''}</span>
+        </div>
+        {day.visibility_sm != null && (
+          <div className="flex justify-between">
+            <span className="text-gray-500">Vis</span>
+            <span>{day.visibility_sm} sm</span>
+          </div>
+        )}
+        {day.ceiling_ft != null && (
+          <div className="flex justify-between">
+            <span className="text-gray-500">Ceiling</span>
+            <span>{day.ceiling_ft.toLocaleString()} ft</span>
+          </div>
+        )}
+        <div className="flex justify-between">
+          <span className="text-gray-500">Precip</span>
+          <span>{day.precip_probability.toFixed(0)}%</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="text-gray-500">Clouds</span>
+          <span>{day.cloud_cover_pct.toFixed(0)}%</span>
+        </div>
+        {day.issues.length > 0 && (
+          <div className="pt-1 border-t border-gray-700 text-orange-400 space-y-0.5">
+            {day.issues.map((iss, i) => <div key={i}>⚠ {iss}</div>)}
+          </div>
+        )}
+        <div className="pt-1 border-t border-gray-700 text-gray-600 capitalize">{day.confidence} confidence · {day.source.replace('_', ' ')}</div>
+      </div>
+    </div>
+  )
+}
+
 function AdvisoryBadges({ advisories }: { advisories: Advisory[] }) {
   if (!advisories.length) return null
   const hasSigmet = advisories.some(a => a.type === 'SIGMET')
@@ -27,13 +76,14 @@ interface Props {
   onMaxAirportsChange: (n: number) => void
 }
 
-function ScorePill({ score }: { score: number }) {
+function ScorePill({ score, day, icao }: { score: number; day: DayForecast; icao: string }) {
+  const [hovered, setHovered] = useState(false)
   return (
-    <div
-      className={`${scoreBgClass(score)} text-gray-900 text-xs font-bold text-center rounded py-1 px-0.5 min-w-0`}
-      title={`${scoreLabel(score)} — ${score.toFixed(0)}/100`}
-    >
-      {score.toFixed(0)}
+    <div className="relative" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}>
+      <div className={`${scoreBgClass(score)} text-gray-900 text-xs font-bold text-center rounded py-1 px-0.5 min-w-0 cursor-default`}>
+        {score.toFixed(0)}
+      </div>
+      {hovered && <WeatherTooltip day={day} icao={icao} />}
     </div>
   )
 }
@@ -76,8 +126,8 @@ function AirportRow({
 
       {/* Day columns */}
       {days.map((day) => (
-        <td key={day.date} className="py-2 px-0.5">
-          <ScorePill score={day.vfr_score} />
+        <td key={day.date} className="py-2 px-0.5 relative">
+          <ScorePill score={day.vfr_score} day={day} icao={airport.icao} />
         </td>
       ))}
     </tr>
