@@ -26,3 +26,13 @@ export interface AirportForecast {
   current_score: number
   daily_forecasts: DayForecast[]
 }
+
+export interface RegionResponse {
+  base_airport: string
+  base_lat: number
+  base_lon: number
+  radius_miles: number
+  airport_count: number
+  airports: AirportForecast[]
+  generated_at: string
+}
