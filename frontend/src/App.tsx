@@ -10,7 +10,8 @@ export default function App() {
   const [radius, setRadius] = useState(115)   // 100 nm in miles
   const [maxAirports, setMaxAirports] = useState(20)
   const [useNm, setUseNm] = useState(true)
-  const { data, isLoading, isError, error } = useRegion(selectedIcao, radius, maxAirports)
+  const [minRwyFt, setMinRwyFt] = useState(2000)
+  const { data, isLoading, isError, error } = useRegion(selectedIcao, radius, maxAirports, minRwyFt)
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -68,6 +69,8 @@ export default function App() {
             maxAirports={maxAirports}
             onMaxAirportsChange={setMaxAirports}
             useNm={useNm}
+            minRwyFt={minRwyFt}
+            onMinRwyFtChange={setMinRwyFt}
           />
         )}
       </main>

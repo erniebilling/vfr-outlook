@@ -55,6 +55,7 @@ def airports_within_radius(
     max_results: int = 20,
     exclude_icao: Optional[str] = None,
     types: tuple[str, ...] = ("small_airport", "medium_airport", "large_airport"),
+    min_rwy_ft: Optional[int] = None,
 ) -> list[dict]:
     """Return airports within radius_miles, sorted by distance, capped at max_results."""
     nearby = []
@@ -63,6 +64,10 @@ def airports_within_radius(
             continue
         if exclude_icao and ap["icao"] == exclude_icao.upper():
             continue
+        if min_rwy_ft is not None:
+            max_rwy = ap.get("max_rwy_ft")
+            if max_rwy is None or max_rwy < min_rwy_ft:
+                continue
         dist = _haversine_miles(lat, lon, ap["lat"], ap["lon"])
         if dist <= radius_miles:
             nearby.append({**ap, "distance_miles": round(dist, 1)})

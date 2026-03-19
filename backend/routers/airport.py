@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from models.forecast import AirportForecast, RegionResponse
 from services.weather import get_airport_forecast
@@ -38,6 +39,7 @@ async def region_forecast(
     icao: str = Query(..., min_length=3, max_length=4, description="Center airport ICAO"),
     radius: int = Query(_DEFAULT_RADIUS, ge=25, le=300, description="Radius in miles"),
     max_airports: int = Query(_DEFAULT_MAX_AIRPORTS, ge=1, le=_HARD_MAX_AIRPORTS, description="Maximum number of airports to return (including base)"),
+    min_rwy_ft: Optional[int] = Query(None, ge=0, description="Minimum runway length in feet"),
 ):
     """
     Return 14-day forecasts for all airports within `radius` miles of `icao`.
@@ -56,6 +58,7 @@ async def region_forecast(
         radius_miles=radius,
         max_results=10000,
         exclude_icao=icao,
+        min_rwy_ft=min_rwy_ft,
     )
     nearby = [a for a in nearby_all if a["icao"].startswith("K")][:max_airports - 1]
 

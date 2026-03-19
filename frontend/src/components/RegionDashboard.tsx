@@ -79,6 +79,8 @@ function fmtDist(miles: number, useNm: boolean): string {
   return `${miles} mi`
 }
 
+const MIN_RWY_OPTIONS = [0, 2000, 3000, 4000, 5000]
+
 interface Props {
   data: RegionResponse
   radius: number
@@ -86,6 +88,8 @@ interface Props {
   maxAirports: number
   onMaxAirportsChange: (n: number) => void
   useNm: boolean
+  minRwyFt: number
+  onMinRwyFtChange: (ft: number) => void
 }
 
 function ScorePill({ score, day, icao }: { score: number; day: DayForecast; icao: string }) {
@@ -150,7 +154,7 @@ function AirportRow({
 
 const MAX_AIRPORTS_OPTIONS = [10, 20, 30, 50]
 
-export default function RegionDashboard({ data, radius, onRadiusChange, maxAirports, onMaxAirportsChange, useNm }: Props) {
+export default function RegionDashboard({ data, radius, onRadiusChange, maxAirports, onMaxAirportsChange, useNm, minRwyFt, onMinRwyFtChange }: Props) {
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
 
   const selectedAirport = data.airports.find((a) => a.icao === selectedIcao) ?? null
@@ -194,6 +198,22 @@ export default function RegionDashboard({ data, radius, onRadiusChange, maxAirpo
               }`}
             >
               {n}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-sm">Min runway:</span>
+          {MIN_RWY_OPTIONS.map((ft) => (
+            <button
+              key={ft}
+              onClick={() => onMinRwyFtChange(ft)}
+              className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+                minRwyFt === ft
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {ft === 0 ? 'Any' : `${(ft / 1000).toFixed(0)}k`}
             </button>
           ))}
         </div>
