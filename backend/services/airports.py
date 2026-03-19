@@ -37,13 +37,15 @@ def get_airport(icao: str) -> Optional[dict]:
 
 def search_airports(query: str, limit: int = 10) -> list[dict]:
     q = query.upper()
-    results = []
+    icao_matches = []
+    name_matches = []
     for ap in _load():
-        if q in ap["icao"] or q in ap["name"].upper():
-            results.append(ap)
-            if len(results) >= limit:
-                break
-    return results
+        if q in ap["icao"]:
+            icao_matches.append(ap)
+        elif q in ap["name"].upper():
+            name_matches.append(ap)
+    combined = icao_matches + name_matches
+    return combined[:limit]
 
 
 def airports_within_radius(
