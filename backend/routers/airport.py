@@ -47,11 +47,12 @@ async def region_forecast(
         raise HTTPException(status_code=404, detail=f"Airport '{icao}' not found.")
 
     # Find nearby airports. Filter to K-prefix ICAO (US public airports with aviation wx data).
+    # No max_results cap here — let the radius do the filtering, then cap after K-prefix filter.
     nearby_all = airports_within_radius(
         lat=base["lat"],
         lon=base["lon"],
         radius_miles=radius,
-        max_results=200,  # oversample, then filter
+        max_results=10000,
         exclude_icao=icao,
     )
     nearby = [a for a in nearby_all if a["icao"].startswith("K")][:max_airports - 1]
