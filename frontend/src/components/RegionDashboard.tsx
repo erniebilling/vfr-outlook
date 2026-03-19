@@ -177,7 +177,7 @@ export default function RegionDashboard({ data, radius, onRadiusChange, maxAirpo
                     : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                 }`}
               >
-                {useNm ? `${nm} nm` : `${mi} mi`}
+                {nm} nm
               </button>
             )
           })}
