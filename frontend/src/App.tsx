@@ -9,6 +9,7 @@ export default function App() {
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
   const [radius, setRadius] = useState(100)
   const [maxAirports, setMaxAirports] = useState(20)
+  const [useNm, setUseNm] = useState(false)
   const { data, isLoading, isError, error } = useRegion(selectedIcao, radius, maxAirports)
 
   return (
@@ -19,7 +20,16 @@ export default function App() {
             <h1 className="text-xl font-bold tracking-tight">✈ VFR Watch</h1>
             <p className="text-xs text-gray-500">14-day VFR probability — regional dashboard</p>
           </div>
-          <SearchBar onSearch={setSelectedIcao} loading={isLoading} />
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setUseNm(v => !v)}
+              className="text-xs px-3 py-1.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors text-gray-300"
+              title="Toggle distance units"
+            >
+              {useNm ? 'NM' : 'mi'}
+            </button>
+            <SearchBar onSearch={setSelectedIcao} loading={isLoading} />
+          </div>
         </div>
       </header>
 
@@ -57,6 +67,7 @@ export default function App() {
             onRadiusChange={setRadius}
             maxAirports={maxAirports}
             onMaxAirportsChange={setMaxAirports}
+            useNm={useNm}
           />
         )}
       </main>

@@ -68,12 +68,25 @@ function AdvisoryBadges({ advisories }: { advisories: Advisory[] }) {
   )
 }
 
+const MI_TO_NM = 0.868976
+
+function fmtDist(miles: number, useNm: boolean): string {
+  if (useNm) return `${Math.round(miles * MI_TO_NM)} nm`
+  return `${miles} mi`
+}
+
+function fmtRadius(miles: number, useNm: boolean): string {
+  if (useNm) return `${Math.round(miles * MI_TO_NM)} nm`
+  return `${miles} mi`
+}
+
 interface Props {
   data: RegionResponse
   radius: number
   onRadiusChange: (r: number) => void
   maxAirports: number
   onMaxAirportsChange: (n: number) => void
+  useNm: boolean
 }
 
 function ScorePill({ score, day, icao }: { score: number; day: DayForecast; icao: string }) {
@@ -93,11 +106,13 @@ function AirportRow({
   days,
   onClick,
   selected,
+  useNm,
 }: {
   airport: AirportForecast
   days: DayForecast[]
   onClick: () => void
   selected: boolean
+  useNm: boolean
 }) {
   return (
     <tr
@@ -111,7 +126,7 @@ function AirportRow({
         <div className="font-mono font-bold text-blue-400 text-sm">{airport.icao}</div>
         <div className="text-gray-500 text-xs truncate max-w-[10rem]">{airport.name}</div>
         {airport.distance_miles != null && airport.distance_miles > 0 && (
-          <div className="text-gray-600 text-xs">{airport.distance_miles} mi</div>
+          <div className="text-gray-600 text-xs">{fmtDist(airport.distance_miles, useNm)}</div>
         )}
         <AdvisoryBadges advisories={airport.advisories} />
       </td>
@@ -137,7 +152,7 @@ function AirportRow({
 const RADIUS_OPTIONS = [50, 100, 150, 200, 300]
 const MAX_AIRPORTS_OPTIONS = [10, 20, 30, 50]
 
-export default function RegionDashboard({ data, radius, onRadiusChange, maxAirports, onMaxAirportsChange }: Props) {
+export default function RegionDashboard({ data, radius, onRadiusChange, maxAirports, onMaxAirportsChange, useNm }: Props) {
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
 
   const selectedAirport = data.airports.find((a) => a.icao === selectedIcao) ?? null
@@ -161,7 +176,7 @@ export default function RegionDashboard({ data, radius, onRadiusChange, maxAirpo
                   : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
               }`}
             >
-              {r} mi
+              {fmtRadius(r, useNm)}
             </button>
           ))}
         </div>
@@ -210,6 +225,7 @@ export default function RegionDashboard({ data, radius, onRadiusChange, maxAirpo
                 onClick={() =>
                   setSelectedIcao((prev) => (prev === airport.icao ? null : airport.icao))
                 }
+                useNm={useNm}
               />
             ))}
           </tbody>
