@@ -18,6 +18,7 @@ class DayForecast(BaseModel):
     vfr_score: float                   # 0-100
     wind_kt: float
     gust_kt: float
+    wind_dir: Optional[int]            # degrees true; None if unknown/variable
     visibility_sm: Optional[float]
     ceiling_ft: Optional[int]
     precip_probability: float
@@ -34,7 +35,8 @@ class Runway(BaseModel):
     width_ft: Optional[int]
     surface: Optional[str]
     lighted: bool
-    headings: list[float]
+    le_hdg: Optional[float]   # true heading of low-end
+    he_hdg: Optional[float]   # true heading of high-end
 
 
 class AirportForecast(BaseModel):

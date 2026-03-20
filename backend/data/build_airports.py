@@ -51,23 +51,30 @@ def main():
         except ValueError:
             pass
 
-        # Parse headings for both runway ends
-        headings = []
-        for key in ("le_heading_degT", "he_heading_degT"):
-            try:
-                h = float(rw[key])
-                headings.append(round(h, 1))
-            except (ValueError, KeyError):
-                pass
+        # Parse true headings for both ends; derive missing HE from LE if needed
+        le_hdg = he_hdg = None
+        try:
+            le_hdg = round(float(rw["le_heading_degT"]), 1)
+        except (ValueError, KeyError, TypeError):
+            pass
+        try:
+            he_hdg = round(float(rw["he_heading_degT"]), 1)
+        except (ValueError, KeyError, TypeError):
+            pass
+        if le_hdg is not None and he_hdg is None:
+            he_hdg = round((le_hdg + 180) % 360, 1)
+        elif he_hdg is not None and le_hdg is None:
+            le_hdg = round((he_hdg + 180) % 360, 1)
 
         runways_by_ident[ident].append({
-            "le":       rw.get("le_ident", "").strip(),
-            "he":       rw.get("he_ident", "").strip(),
+            "le":        rw.get("le_ident", "").strip(),
+            "he":        rw.get("he_ident", "").strip(),
             "length_ft": length,
             "width_ft":  width,
             "surface":   rw.get("surface", "").strip().upper() or None,
             "lighted":   rw.get("lighted") == "1",
-            "headings":  headings,
+            "le_hdg":    le_hdg,
+            "he_hdg":    he_hdg,
         })
 
     # Build airport list

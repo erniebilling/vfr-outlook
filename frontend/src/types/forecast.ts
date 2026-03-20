@@ -16,6 +16,7 @@ export interface DayForecast {
   vfr_score: number
   wind_kt: number
   gust_kt: number
+  wind_dir: number | null
   visibility_sm: number | null
   ceiling_ft: number | null
   precip_probability: number
@@ -32,7 +33,8 @@ export interface Runway {
   width_ft: number | null
   surface: string | null
   lighted: boolean
-  headings: number[]
+  le_hdg: number | null
+  he_hdg: number | null
 }
 
 export interface AirportForecast {

@@ -66,7 +66,7 @@ async def fetch_open_meteo(client: httpx.AsyncClient, lat: float, lon: float) ->
             params={
                 "latitude": lat,
                 "longitude": lon,
-                "hourly": "precipitation_probability,windspeed_10m,windgusts_10m,cloudcover",
+                "hourly": "precipitation_probability,windspeed_10m,windgusts_10m,winddirection_10m,cloudcover",
                 "forecast_days": 16,
                 "windspeed_unit": "kn",
                 "precipitation_unit": "inch",
@@ -123,6 +123,17 @@ def _parse_noaa_day(hourly_data: dict, day_offset: int) -> Optional[dict]:
     }
 
 
+def _avg_wind_dir(dirs: list[float]) -> Optional[int]:
+    """Circular mean of wind directions."""
+    import math
+    if not dirs:
+        return None
+    sin_sum = sum(math.sin(math.radians(d)) for d in dirs)
+    cos_sum = sum(math.cos(math.radians(d)) for d in dirs)
+    avg = math.degrees(math.atan2(sin_sum, cos_sum)) % 360
+    return round(avg)
+
+
 def _parse_open_meteo_day(om_data: dict, day_offset: int) -> Optional[dict]:
     """Extract average daytime conditions for a given day offset from Open-Meteo."""
     try:
@@ -130,6 +141,7 @@ def _parse_open_meteo_day(om_data: dict, day_offset: int) -> Optional[dict]:
         times = hourly.get("time", [])
         winds = hourly.get("windspeed_10m", [])
         gusts = hourly.get("windgusts_10m", [])
+        dirs  = hourly.get("winddirection_10m", [])
         precip = hourly.get("precipitation_probability", [])
         clouds = hourly.get("cloudcover", [])
 
@@ -142,6 +154,7 @@ def _parse_open_meteo_day(om_data: dict, day_offset: int) -> Optional[dict]:
 
         dw = winds[day_start:day_end]
         dg = gusts[day_start:day_end]
+        dd = dirs[day_start:day_end] if dirs else []
         dp = precip[day_start:day_end]
         dc = clouds[day_start:day_end]
 
@@ -149,6 +162,7 @@ def _parse_open_meteo_day(om_data: dict, day_offset: int) -> Optional[dict]:
             "date": times[day_start].split("T")[0],
             "avg_wind": sum(dw) / len(dw) if dw else 0,
             "max_gust": max(dg) if dg else 0,
+            "wind_dir": _avg_wind_dir(dd),
             "precip_pct": sum(dp) / len(dp) if dp else 0,
             "cloud_cover": sum(dc) / len(dc) if dc else 0,
             "visibility": None,
@@ -162,6 +176,13 @@ def _metar_to_day_forecast(metar: dict) -> DayForecast:
     """Build a DayForecast from a current METAR observation."""
     wind_kt = float(metar.get("wspd") or 0)
     gust_kt = float(metar.get("wgst") or 0)
+    wind_dir = None
+    try:
+        wdir = metar.get("wdir")
+        if wdir is not None and str(wdir).upper() not in ("VRB", ""):
+            wind_dir = int(float(wdir))
+    except Exception:
+        pass
     vis_sm = metar.get("visib")
     if vis_sm is not None:
         try:
@@ -189,6 +210,7 @@ def _metar_to_day_forecast(metar: dict) -> DayForecast:
         vfr_score=score,
         wind_kt=wind_kt,
         gust_kt=gust_kt,
+        wind_dir=wind_dir,
         visibility_sm=vis_sm,
         ceiling_ft=ceiling_ft,
         precip_probability=0.0,
@@ -229,6 +251,7 @@ def _build_day_forecasts(
                 date=date_str,
                 vfr_score=50.0,
                 wind_kt=0, gust_kt=0,
+                wind_dir=None,
                 visibility_sm=None,
                 ceiling_ft=None,
                 precip_probability=0,
@@ -253,6 +276,7 @@ def _build_day_forecasts(
             vfr_score=score,
             wind_kt=round(raw.get("avg_wind", 0), 1),
             gust_kt=round(raw.get("max_gust", 0), 1),
+            wind_dir=raw.get("wind_dir"),
             visibility_sm=raw.get("visibility"),
             ceiling_ft=raw.get("ceiling"),
             precip_probability=round(raw.get("precip_pct", 0), 1),

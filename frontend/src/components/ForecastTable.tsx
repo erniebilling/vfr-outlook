@@ -59,20 +59,102 @@ function AdvisoryPanel({ advisories }: { advisories: Advisory[] }) {
   )
 }
 
-function RunwayPanel({ runways }: { runways: Runway[] }) {
+/** Returns crosswind component in knots, or null if wind_dir unknown. */
+function crosswindKt(windDir: number, windKt: number, rwyHdg: number): number {
+  const angle = (windDir - rwyHdg) * Math.PI / 180
+  return Math.abs(Math.sin(angle) * windKt)
+}
+
+/** For a runway, returns the end with least crosswind, and the crosswind value. */
+function bestEnd(rw: Runway, windDir: number, windKt: number): { end: 'le' | 'he'; xw: number } | null {
+  if (rw.le_hdg == null && rw.he_hdg == null) return null
+  const xwLe = rw.le_hdg != null ? crosswindKt(windDir, windKt, rw.le_hdg) : Infinity
+  const xwHe = rw.he_hdg != null ? crosswindKt(windDir, windKt, rw.he_hdg) : Infinity
+  return xwLe <= xwHe
+    ? { end: 'le', xw: xwLe }
+    : { end: 'he', xw: xwHe }
+}
+
+function xwColor(xw: number): string {
+  if (xw <= 5)  return 'text-green-400'
+  if (xw <= 10) return 'text-yellow-400'
+  if (xw <= 15) return 'text-orange-400'
+  return 'text-red-400'
+}
+
+function RunwayPanel({ runways, day }: { runways: Runway[]; day: DayForecast }) {
   if (!runways.length) return null
+  const hasWind = day.wind_dir != null && day.wind_kt > 0
+
+  // Find the globally preferred runway (lowest crosswind)
+  let preferredIdx = -1
+  let lowestXw = Infinity
+  if (hasWind) {
+    runways.forEach((rw, i) => {
+      const b = bestEnd(rw, day.wind_dir!, day.wind_kt)
+      if (b && b.xw < lowestXw) { lowestXw = b.xw; preferredIdx = i }
+    })
+  }
+
   return (
     <div className="space-y-1.5">
-      <div className="text-sm font-semibold text-gray-300">Runways</div>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-gray-300">Runways</span>
+        {hasWind && (
+          <span className="text-xs text-gray-500">
+            Wind {day.wind_dir}° @ {day.wind_kt.toFixed(0)} kt
+            {day.gust_kt > 0 ? ` G${day.gust_kt.toFixed(0)}` : ''}
+          </span>
+        )}
+      </div>
       <div className="flex flex-wrap gap-2">
-        {runways.map((rw, i) => (
-          <div key={i} className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-xs text-gray-300 space-y-0.5">
-            <div className="font-mono font-bold text-white">{rw.le}/{rw.he}</div>
-            {rw.length_ft && <div>{rw.length_ft.toLocaleString()} ft{rw.width_ft ? ` × ${rw.width_ft} ft` : ''}</div>}
-            {rw.surface && <div className="text-gray-500">{rw.surface}</div>}
-            <div className="text-gray-500">{rw.lighted ? '💡 Lighted' : 'No lights'}</div>
-          </div>
-        ))}
+        {runways.map((rw, i) => {
+          const best = hasWind ? bestEnd(rw, day.wind_dir!, day.wind_kt) : null
+          const preferred = i === preferredIdx
+          const preferredEnd = best?.end === 'le' ? rw.le : rw.he
+          const preferredHdg = best?.end === 'le' ? rw.le_hdg : rw.he_hdg
+
+          return (
+            <div
+              key={i}
+              className={`rounded-lg px-3 py-2 text-xs space-y-1 border ${
+                preferred
+                  ? 'bg-green-900/30 border-green-700/50'
+                  : 'bg-gray-800 border-gray-700 text-gray-300'
+              }`}
+            >
+              {/* Designators */}
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-white">{rw.le}/{rw.he}</span>
+                {preferred && (
+                  <span className="text-green-400 font-semibold">preferred</span>
+                )}
+              </div>
+
+              {/* Length × width */}
+              {rw.length_ft && (
+                <div className="text-gray-400">
+                  {rw.length_ft.toLocaleString()} ft{rw.width_ft ? ` × ${rw.width_ft} ft` : ''}
+                </div>
+              )}
+
+              {/* Surface + lights */}
+              <div className="text-gray-500">
+                {[rw.surface, rw.lighted ? 'Lighted' : 'No lights'].filter(Boolean).join(' · ')}
+              </div>
+
+              {/* Crosswind for preferred end */}
+              {best && (
+                <div className={`font-medium ${xwColor(best.xw)}`}>
+                  Rwy {preferredEnd}
+                  {preferredHdg != null && ` (${preferredHdg.toFixed(0)}°T)`}
+                  {' — '}
+                  {best.xw.toFixed(1)} kt XW
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -91,7 +173,7 @@ export default function ForecastTable({ data }: Props) {
       </div>
 
       {/* Runways */}
-      <RunwayPanel runways={data.runways} />
+      <RunwayPanel runways={data.runways} day={data.daily_forecasts[0]} />
 
       {/* Active advisories */}
       <AdvisoryPanel advisories={data.advisories} />
