@@ -1,10 +1,11 @@
 import asyncio
+import math
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
-from models.forecast import AirportForecast, RegionResponse
+from models.forecast import AirportForecast, RegionResponse, TripResponse, TripDayScore
 from services.weather import get_airport_forecast
-from services.airports import get_airport, search_airports as db_search, airports_within_radius
+from services.airports import get_airport, search_airports as db_search, airports_within_radius, airports_in_corridor, _haversine_miles
 from services.scorer import DEFAULT_CRITERIA
 
 router = APIRouter(prefix="/api/v1", tags=["airport"])
@@ -94,6 +95,110 @@ async def region_forecast(
         radius_miles=radius,
         airport_count=len(valid),
         airports=valid,
+        generated_at=datetime.now(timezone.utc),
+    )
+
+
+_CONFIDENCE_ORDER = {"high": 0, "medium": 1, "low": 2}
+
+
+@router.get("/trip", response_model=TripResponse)
+async def trip_forecast(
+    origin: str = Query(..., min_length=2, max_length=5),
+    dest: str = Query(..., min_length=2, max_length=5),
+    corridor_width: int = Query(50, ge=10, le=150, description="Corridor half-width in miles"),
+    max_airports: int = Query(20, ge=2, le=50),
+    min_rwy_ft: Optional[int] = Query(None, ge=0),
+):
+    """
+    Return 14-day trip forecasts for airports along the corridor between origin and dest.
+    Per-day trip score = worst (min) VFR score across all corridor airports.
+    """
+    origin = origin.upper().strip()
+    dest = dest.upper().strip()
+
+    orig_info = get_airport(origin)
+    dest_info = get_airport(dest)
+    if not orig_info:
+        raise HTTPException(status_code=404, detail=f"Origin airport '{origin}' not found.")
+    if not dest_info:
+        raise HTTPException(status_code=404, detail=f"Destination airport '{dest}' not found.")
+
+    corridor_miles = _haversine_miles(
+        orig_info["lat"], orig_info["lon"],
+        dest_info["lat"], dest_info["lon"],
+    )
+
+    # Find corridor airports (excluding origin/dest — added separately)
+    corridor = airports_in_corridor(
+        lat1=orig_info["lat"], lon1=orig_info["lon"],
+        lat2=dest_info["lat"], lon2=dest_info["lon"],
+        width_miles=corridor_width,
+        exclude_icaos=(origin, dest),
+        min_rwy_ft=min_rwy_ft,
+    )
+    # Cap corridor airports, keep K-prefix public fields preferred
+    k_airports = [a for a in corridor if a["icao"].startswith("K")][:max_airports - 2]
+
+    all_airports = [
+        orig_info | {"cross_track_miles": 0.0},
+        *k_airports,
+        dest_info | {"cross_track_miles": 0.0},
+    ]
+
+    # Fetch forecasts concurrently
+    tasks = [
+        get_airport_forecast(
+            icao=a["icao"],
+            name=a["name"],
+            lat=a["lat"],
+            lon=a["lon"],
+            elevation_ft=a.get("elev"),
+            distance_miles=a.get("cross_track_miles"),
+            runways=a.get("runways", []),
+            max_rwy_ft=a.get("max_rwy_ft"),
+        )
+        for a in all_airports
+    ]
+    forecasts: list[AirportForecast] = [
+        f for f in await asyncio.gather(*tasks, return_exceptions=True)
+        if isinstance(f, AirportForecast)
+    ]
+
+    # Build per-day trip scores (worst airport wins)
+    num_days = max(len(f.daily_forecasts) for f in forecasts) if forecasts else 0
+    daily_scores: list[TripDayScore] = []
+    for i in range(num_days):
+        day_scores = [
+            (f.daily_forecasts[i].vfr_score, f.icao, f.name, f.daily_forecasts[i].confidence)
+            for f in forecasts
+            if i < len(f.daily_forecasts)
+        ]
+        if not day_scores:
+            continue
+        worst_score, worst_icao, worst_name, _ = min(day_scores, key=lambda x: x[0])
+        worst_conf = max(
+            (conf for _, _, _, conf in day_scores),
+            key=lambda c: _CONFIDENCE_ORDER.get(c, 99),
+        )
+        daily_scores.append(TripDayScore(
+            date=forecasts[0].daily_forecasts[i].date,
+            trip_score=worst_score,
+            limiting_icao=worst_icao,
+            limiting_name=worst_name,
+            confidence=worst_conf,
+        ))
+
+    return TripResponse(
+        origin=origin,
+        origin_name=orig_info["name"],
+        dest=dest,
+        dest_name=dest_info["name"],
+        corridor_miles=round(corridor_miles, 1),
+        corridor_width_miles=float(corridor_width),
+        airport_count=len(forecasts),
+        airports=forecasts,
+        daily_scores=daily_scores,
         generated_at=datetime.now(timezone.utc),
     )
 

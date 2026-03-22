@@ -61,3 +61,24 @@ export interface RegionResponse {
   airports: AirportForecast[]
   generated_at: string
 }
+
+export interface TripDayScore {
+  date: string
+  trip_score: number
+  limiting_icao: string
+  limiting_name: string
+  confidence: string
+}
+
+export interface TripResponse {
+  origin: string
+  origin_name: string
+  dest: string
+  dest_name: string
+  corridor_miles: number
+  corridor_width_miles: number
+  airport_count: number
+  airports: AirportForecast[]
+  daily_scores: TripDayScore[]
+  generated_at: string
+}

@@ -62,3 +62,24 @@ class RegionResponse(BaseModel):
     airport_count: int
     airports: list[AirportForecast]
     generated_at: datetime
+
+
+class TripDayScore(BaseModel):
+    date: str
+    trip_score: float          # min of all corridor airports on this day
+    limiting_icao: str         # airport with the worst score
+    limiting_name: str
+    confidence: str            # lowest confidence tier across airports
+
+
+class TripResponse(BaseModel):
+    origin: str
+    origin_name: str
+    dest: str
+    dest_name: str
+    corridor_miles: float
+    corridor_width_miles: float
+    airport_count: int
+    airports: list[AirportForecast]   # corridor airports, origin first, dest last
+    daily_scores: list[TripDayScore]  # 14 days, scored by worst airport
+    generated_at: datetime

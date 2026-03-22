@@ -48,6 +48,87 @@ def search_airports(query: str, limit: int = 10) -> list[dict]:
     return combined[:limit]
 
 
+def _point_to_segment_dist_miles(
+    lat: float, lon: float,
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+) -> float:
+    """
+    Approximate cross-track / along-track distance from a point to a great-circle segment.
+    Uses flat-earth approximation (fine for corridors < 500 mi).
+    Returns distance in miles from the point to the nearest point on the segment.
+    """
+    # Convert to rough x/y in miles (equirectangular)
+    R = 3958.8
+    mid_lat = math.radians((lat1 + lat2) / 2)
+    cos_lat = math.cos(mid_lat)
+
+    ax = math.radians(lon1) * cos_lat * R
+    ay = math.radians(lat1) * R
+    bx = math.radians(lon2) * cos_lat * R
+    by = math.radians(lat2) * R
+    px = math.radians(lon) * cos_lat * R
+    py = math.radians(lat) * R
+
+    abx, aby = bx - ax, by - ay
+    apx, apy = px - ax, py - ay
+    ab_len_sq = abx * abx + aby * aby
+    if ab_len_sq == 0:
+        return math.hypot(apx, apy)
+    t = max(0.0, min(1.0, (apx * abx + apy * aby) / ab_len_sq))
+    closest_x = ax + t * abx
+    closest_y = ay + t * aby
+    return math.hypot(px - closest_x, py - closest_y)
+
+
+def airports_in_corridor(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+    width_miles: float = 50.0,
+    exclude_icaos: tuple[str, ...] = (),
+    min_rwy_ft: Optional[int] = None,
+) -> list[dict]:
+    """
+    Return airports within `width_miles` of the great-circle path between two points,
+    sorted by along-track position (origin → dest order).
+    """
+    exclude = {i.upper() for i in exclude_icaos}
+    results = []
+    for ap in _load():
+        if ap.get("type") not in ("small_airport", "medium_airport", "large_airport"):
+            continue
+        if ap["icao"] in exclude:
+            continue
+        if min_rwy_ft is not None:
+            max_rwy = ap.get("max_rwy_ft")
+            if max_rwy is None or max_rwy < min_rwy_ft:
+                continue
+        dist = _point_to_segment_dist_miles(ap["lat"], ap["lon"], lat1, lon1, lat2, lon2)
+        if dist <= width_miles:
+            results.append({**ap, "cross_track_miles": round(dist, 1)})
+
+    # Sort by along-track position (project onto origin→dest axis)
+    R = 3958.8
+    mid_lat = math.radians((lat1 + lat2) / 2)
+    cos_lat = math.cos(mid_lat)
+    ax = math.radians(lon1) * cos_lat * R
+    ay = math.radians(lat1) * R
+    bx = math.radians(lon2) * cos_lat * R
+    by = math.radians(lat2) * R
+    abx, aby = bx - ax, by - ay
+
+    def along_track(ap: dict) -> float:
+        px = math.radians(ap["lon"]) * cos_lat * R
+        py = math.radians(ap["lat"]) * R
+        ab_len_sq = abx * abx + aby * aby
+        if ab_len_sq == 0:
+            return 0.0
+        return ((px - ax) * abx + (py - ay) * aby) / ab_len_sq
+
+    results.sort(key=along_track)
+    return results
+
+
 def airports_within_radius(
     lat: float,
     lon: float,
