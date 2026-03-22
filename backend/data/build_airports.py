@@ -84,7 +84,9 @@ def main():
         if ap_type not in KEEP_TYPES:
             continue
 
-        ident = ap.get("gps_code", "").strip().upper() or ap.get("ident", "").strip().upper()
+        gps_code = ap.get("gps_code", "").strip().upper()
+        raw_ident = ap.get("ident", "").strip().upper()
+        ident = gps_code or raw_ident
         if not ident:
             continue
 
@@ -113,7 +115,8 @@ def main():
         except ValueError:
             pass
 
-        runways = runways_by_ident.get(ident, [])
+        # Runways may be indexed under gps_code (e.g. "S39") or raw ident (e.g. "KS39")
+        runways = runways_by_ident.get(ident) or runways_by_ident.get(raw_ident) or []
 
         # Compute derived summaries useful for filtering
         max_rwy_length = max((r["length_ft"] for r in runways if r["length_ft"]), default=None)
