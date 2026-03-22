@@ -137,8 +137,24 @@ async def trip_forecast(
         exclude_icaos=(origin, dest),
         min_rwy_ft=min_rwy_ft,
     )
-    # Cap corridor airports, keep K-prefix public fields preferred
-    k_airports = [a for a in corridor if a["icao"].startswith("K")][:max_airports - 2]
+    # Keep K-prefix public airports with weather data, then evenly space
+    # along the corridor rather than taking the first N (which clusters near origin).
+    k_airports_all = [a for a in corridor if a["icao"].startswith("K")]
+    n_slots = max_airports - 2  # slots between origin and dest
+    if len(k_airports_all) <= n_slots:
+        k_airports = k_airports_all
+    else:
+        # airports_in_corridor returns them sorted by along-track t ∈ [0,1].
+        # Assign each airport a t value by its index position, then pick one
+        # per evenly-spaced bucket.
+        total = len(k_airports_all)
+        bucket_size = total / n_slots
+        k_airports = []
+        for slot in range(n_slots):
+            # target index = midpoint of this bucket
+            target = (slot + 0.5) * bucket_size
+            idx = min(round(target), total - 1)
+            k_airports.append(k_airports_all[idx])
 
     all_airports = [
         orig_info | {"cross_track_miles": 0.0},
