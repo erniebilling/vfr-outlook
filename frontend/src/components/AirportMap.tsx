@@ -72,22 +72,18 @@ export default function AirportMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const map = L.map(containerRef.current, { center: [44, -120], zoom: 6, zoomControl: true })
-    // Base layer: OSM for context at all zooms
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
-      maxZoom: 19,
-      opacity: 0.4,
-    }).addTo(map)
+    const faaAttr = 'Aeronautical data &copy; FAA'
 
-    // FAA VFR Sectional overlay — only available at zoom 8+
+    // FAA WAC (World Aeronautical Chart) — zooms 4–8
+    L.tileLayer(
+      'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/WAC/MapServer/tile/{z}/{y}/{x}',
+      { attribution: faaAttr, minZoom: 4, maxZoom: 8 },
+    ).addTo(map)
+
+    // FAA VFR Sectional — zooms 8–12 (higher detail)
     L.tileLayer(
       'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}',
-      {
-        attribution: 'FAA VFR Sectional',
-        minZoom: 8,
-        maxZoom: 12,
-        opacity: 1.0,
-      },
+      { attribution: faaAttr, minZoom: 8, maxZoom: 12 },
     ).addTo(map)
     mapRef.current = map
     return () => {
