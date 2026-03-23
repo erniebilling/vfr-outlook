@@ -1,8 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, lazy, Suspense, useMemo } from 'react'
 import type { TripDayScore, AirportForecast } from '../types/forecast'
 import { scoreBgClass, scoreLabel, formatDate, confidenceBadge } from '../lib/score'
 import { useTrip } from '../hooks/useTrip'
 import ForecastTable from './ForecastTable'
+
+const AirportMap = lazy(() => import('./AirportMap'))
 
 // ── Airport search input ──────────────────────────────────────────────────────
 
@@ -194,12 +196,31 @@ export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange }: Props
   const [dest, setDest] = useState<string | null>(null)
   const [corridorWidth, setCorridorWidth] = useState(50)
   const [maxAirports, setMaxAirports] = useState(15)
+  const [activeDayIndex, setActiveDayIndex] = useState(0)
+  const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
 
   const { data, isLoading, isError, error } = useTrip(
     origin, dest, corridorWidth, maxAirports, minRwyFt,
   )
 
   const today = new Date().toISOString().slice(0, 10)
+
+  // Fit bounds: SW/NE corners of origin+dest
+  const fitBounds = useMemo(() => {
+    if (!data) return undefined
+    const lats = data.airports.map(a => a.lat)
+    const lons = data.airports.map(a => a.lon)
+    return [
+      { lat: Math.min(...lats), lon: Math.min(...lons) },
+      { lat: Math.max(...lats), lon: Math.max(...lons) },
+    ] as [{ lat: number; lon: number }, { lat: number; lon: number }]
+  }, [data])
+
+  // Route line through all corridor airports in order
+  const routeLine = useMemo(() =>
+    data?.airports.map(a => ({ lat: a.lat, lon: a.lon })),
+    [data]
+  )
 
   return (
     <div className="space-y-6">
@@ -298,6 +319,40 @@ export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange }: Props
 
           {/* Corridor airports */}
           <CorridorAirports airports={data.airports} />
+
+          {/* Day slider */}
+          {data.daily_scores.length > 0 && (
+            <div className="bg-gray-900 border border-gray-800 rounded-xl px-4 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-white">
+                  {formatDate(data.daily_scores[activeDayIndex]?.date ?? '')}
+                </span>
+                <span className="text-xs text-gray-500">
+                  {activeDayIndex === 0 ? 'Today' : `Day +${activeDayIndex}`} · map colors update with slider
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={data.daily_scores.length - 1}
+                value={activeDayIndex}
+                onChange={e => setActiveDayIndex(Number(e.target.value))}
+                className="w-full accent-blue-500 cursor-pointer"
+              />
+            </div>
+          )}
+
+          {/* Map */}
+          <Suspense fallback={<div className="h-[400px] bg-gray-900 rounded-xl border border-gray-800 flex items-center justify-center text-gray-600">Loading map…</div>}>
+            <AirportMap
+              airports={data.airports}
+              dayIndex={activeDayIndex}
+              fitBounds={fitBounds}
+              routeLine={routeLine}
+              selectedIcao={selectedIcao}
+              onSelect={icao => setSelectedIcao(prev => prev === icao ? null : icao)}
+            />
+          </Suspense>
 
           {/* Best days */}
           <BestDays scores={data.daily_scores} />
