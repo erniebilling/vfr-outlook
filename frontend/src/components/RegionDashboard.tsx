@@ -1,10 +1,8 @@
-import { useState, lazy, Suspense } from 'react'
+import { useState } from 'react'
 import type { RegionResponse, AirportForecast, DayForecast, Advisory } from '../types/forecast'
 import { scoreBgClass, scoreLabel, formatDate } from '../lib/score'
 import ForecastTable from './ForecastTable'
-
-// Lazy-load the map so Leaflet CSS doesn't block initial render
-const RegionMap = lazy(() => import('./RegionMap'))
+import RegionMap from './RegionMap'
 
 function WeatherTooltip({ day, icao }: { day: DayForecast; icao: string }) {
   return (
@@ -285,17 +283,15 @@ export default function RegionDashboard({
 
       {/* Map */}
       {showMap && (
-        <Suspense fallback={<div className="h-[400px] bg-gray-900 rounded-xl border border-gray-800 flex items-center justify-center text-gray-600">Loading map…</div>}>
-          <RegionMap
-            airports={data.airports}
-            centerLat={data.base_lat}
-            centerLon={data.base_lon}
-            radiusMiles={radius}
-            dayIndex={activeDayIndex}
-            selectedIcao={selectedIcao}
-            onSelect={icao => setSelectedIcao(prev => prev === icao ? null : icao)}
-          />
-        </Suspense>
+        <RegionMap
+          airports={data.airports}
+          centerLat={data.base_lat}
+          centerLon={data.base_lon}
+          radiusMiles={radius}
+          dayIndex={activeDayIndex}
+          selectedIcao={selectedIcao}
+          onSelect={icao => setSelectedIcao(prev => prev === icao ? null : icao)}
+        />
       )}
 
       {/* Grid */}

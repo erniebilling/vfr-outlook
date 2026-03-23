@@ -1,10 +1,9 @@
-import { useState, useRef, useEffect, lazy, Suspense, useMemo } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import type { TripDayScore, AirportForecast } from '../types/forecast'
 import { scoreBgClass, scoreLabel, formatDate, confidenceBadge } from '../lib/score'
 import { useTrip } from '../hooks/useTrip'
 import ForecastTable from './ForecastTable'
-
-const AirportMap = lazy(() => import('./AirportMap'))
+import AirportMap from './AirportMap'
 
 // ── Airport search input ──────────────────────────────────────────────────────
 
@@ -345,16 +344,14 @@ export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange }: Props
           )}
 
           {/* Map */}
-          <Suspense fallback={<div className="h-[400px] bg-gray-900 rounded-xl border border-gray-800 flex items-center justify-center text-gray-600">Loading map…</div>}>
-            <AirportMap
-              airports={data.airports}
-              dayIndex={activeDayIndex}
-              fitBounds={fitBounds}
-              routeLine={routeLine}
-              selectedIcao={selectedIcao}
-              onSelect={icao => setSelectedIcao(prev => prev === icao ? null : icao)}
-            />
-          </Suspense>
+          <AirportMap
+            airports={data.airports}
+            dayIndex={activeDayIndex}
+            fitBounds={fitBounds}
+            routeLine={routeLine}
+            selectedIcao={selectedIcao}
+            onSelect={icao => setSelectedIcao(prev => prev === icao ? null : icao)}
+          />
 
           {/* Best days */}
           <BestDays scores={data.daily_scores} />
