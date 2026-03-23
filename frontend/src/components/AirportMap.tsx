@@ -73,31 +73,50 @@ export default function AirportMap({
     if (!containerRef.current || mapRef.current) return
     const map = L.map(containerRef.current, { center: [44, -120], zoom: 6, zoomControl: true })
 
+    const openAipKey = import.meta.env.VITE_OPENAIP_API_KEY as string | undefined
+
     // OSM base — always visible at all zoom levels
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
       maxZoom: 19,
     }).addTo(map)
 
-    // FAA VFR Sectional — overlaid at zoom 8+ where tiles are available
+    // FAA VFR Sectional — overlaid at zoom 8–12
     const sectional = L.tileLayer(
       'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}',
-      { attribution: 'Aeronautical data &copy; FAA', minZoom: 8, maxZoom: 12, opacity: 1 },
+      { attribution: 'Aeronautical data &copy; FAA', maxZoom: 12 },
     )
 
-    function updateSectional() {
-      if (map.getZoom() >= 8) {
+    // OpenAIP airspace + navaid overlay — meaningful content at z7–11
+    const openAip = openAipKey
+      ? L.tileLayer(
+          `https://api.tiles.openaip.net/api/data/openaip/{z}/{x}/{y}.png?apiKey=${openAipKey}`,
+          {
+            attribution: '&copy; <a href="https://www.openaip.net">OpenAIP</a>',
+            minZoom: 7,
+            maxZoom: 11,
+            opacity: 0.9,
+          },
+        )
+      : null
+
+    function updateLayers() {
+      const z = map.getZoom()
+      if (z >= 8) {
         if (!map.hasLayer(sectional)) sectional.addTo(map)
       } else {
         if (map.hasLayer(sectional)) map.removeLayer(sectional)
       }
+      if (openAip) {
+        if (!map.hasLayer(openAip)) openAip.addTo(map)
+      }
     }
 
-    map.on('zoomend', updateSectional)
-    updateSectional()
+    map.on('zoomend', updateLayers)
+    updateLayers()
     mapRef.current = map
     return () => {
-      map.off('zoomend', updateSectional)
+      map.off('zoomend', updateLayers)
       map.remove()
       mapRef.current = null
       markersRef.current.clear()
