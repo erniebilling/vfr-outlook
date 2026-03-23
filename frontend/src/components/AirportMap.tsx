@@ -73,24 +73,31 @@ export default function AirportMap({
     if (!containerRef.current || mapRef.current) return
     const map = L.map(containerRef.current, { center: [44, -120], zoom: 6, zoomControl: true })
 
-    const WAC_URL = 'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/WAC/MapServer/tile/{z}/{y}/{x}'
-    const SEC_URL = 'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}'
-    const faaAttr = 'Aeronautical data &copy; FAA'
+    // OSM base — always visible at all zoom levels
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map)
 
-    // Single tile layer — swap URL on zoom to avoid stale tile bleed-through
-    const chartLayer = L.tileLayer(WAC_URL, { attribution: faaAttr, maxZoom: 12 }).addTo(map)
+    // FAA VFR Sectional — overlaid at zoom 8+ where tiles are available
+    const sectional = L.tileLayer(
+      'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}',
+      { attribution: 'Aeronautical data &copy; FAA', minZoom: 8, maxZoom: 12, opacity: 1 },
+    )
 
-    function updateChart() {
-      const url = map.getZoom() >= 8 ? SEC_URL : WAC_URL
-      if ((chartLayer as any)._url !== url) {
-        chartLayer.setUrl(url)
+    function updateSectional() {
+      if (map.getZoom() >= 8) {
+        if (!map.hasLayer(sectional)) sectional.addTo(map)
+      } else {
+        if (map.hasLayer(sectional)) map.removeLayer(sectional)
       }
     }
 
-    map.on('zoomend', updateChart)
+    map.on('zoomend', updateSectional)
+    updateSectional()
     mapRef.current = map
     return () => {
-      map.off('zoomend', updateChart)
+      map.off('zoomend', updateSectional)
       map.remove()
       mapRef.current = null
       markersRef.current.clear()
