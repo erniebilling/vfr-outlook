@@ -7,18 +7,18 @@ html {
   overflow-y: scroll;
 }
 
-/* Dark tooltip for Leaflet airport identifiers */
+/* Tooltip for Leaflet airport identifiers (visible on sectional chart) */
 .leaflet-vfr-tooltip {
-  background: #1f2937;
+  background: rgba(255, 255, 255, 0.92);
   border: 1px solid #374151;
   border-radius: 4px;
-  color: #93c5fd;
+  color: #1e3a5f;
   font-family: ui-monospace, monospace;
   font-size: 11px;
   font-weight: 700;
   padding: 2px 6px;
   white-space: nowrap;
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
 }
 .leaflet-vfr-tooltip::before {
   border-top-color: #374151;

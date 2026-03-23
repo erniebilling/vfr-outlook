@@ -72,10 +72,14 @@ export default function AirportMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const map = L.map(containerRef.current, { center: [44, -120], zoom: 6, zoomControl: true })
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      maxZoom: 19,
-    }).addTo(map)
+    L.tileLayer(
+      'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}',
+      {
+        attribution: 'FAA VFR Sectional &copy; FAA',
+        maxZoom: 11,
+        minZoom: 4,
+      },
+    ).addTo(map)
     mapRef.current = map
     return () => {
       map.remove()
@@ -105,7 +109,7 @@ export default function AirportMap({
     if (routeLine && routeLine.length >= 2) {
       routeRef.current = L.polyline(
         routeLine.map(p => [p.lat, p.lon] as L.LatLngTuple),
-        { color: '#60a5fa', weight: 2, opacity: 0.5, dashArray: '6 4' },
+        { color: '#1d4ed8', weight: 2.5, opacity: 0.7, dashArray: '6 4' },
       ).addTo(map)
     }
   }, [routeLine])
@@ -126,10 +130,10 @@ export default function AirportMap({
 
       const marker = L.circleMarker([airport.lat, airport.lon], {
         radius: isEndpoint ? 12 : isSelected ? 10 : 8,
-        color: isSelected ? '#ffffff' : isEndpoint ? '#93c5fd' : color,
+        color: isSelected ? '#ffffff' : '#000000',
         fillColor: color,
-        fillOpacity: 0.9,
-        weight: isSelected ? 2.5 : isEndpoint ? 2.5 : 1,
+        fillOpacity: 0.85,
+        weight: isSelected ? 3 : isEndpoint ? 2.5 : 1.5,
       })
 
       marker.bindTooltip(airport.icao, {
