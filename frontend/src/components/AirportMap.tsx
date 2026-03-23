@@ -72,21 +72,25 @@ export default function AirportMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return
     const map = L.map(containerRef.current, { center: [44, -120], zoom: 6, zoomControl: true })
+
+    const WAC_URL = 'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/WAC/MapServer/tile/{z}/{y}/{x}'
+    const SEC_URL = 'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}'
     const faaAttr = 'Aeronautical data &copy; FAA'
 
-    // FAA WAC (World Aeronautical Chart) — zooms 4–8
-    L.tileLayer(
-      'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/WAC/MapServer/tile/{z}/{y}/{x}',
-      { attribution: faaAttr, minZoom: 4, maxZoom: 8 },
-    ).addTo(map)
+    // Single tile layer — swap URL on zoom to avoid stale tile bleed-through
+    const chartLayer = L.tileLayer(WAC_URL, { attribution: faaAttr, maxZoom: 12 }).addTo(map)
 
-    // FAA VFR Sectional — zooms 8–12 (higher detail)
-    L.tileLayer(
-      'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}',
-      { attribution: faaAttr, minZoom: 8, maxZoom: 12 },
-    ).addTo(map)
+    function updateChart() {
+      const url = map.getZoom() >= 8 ? SEC_URL : WAC_URL
+      if ((chartLayer as any)._url !== url) {
+        chartLayer.setUrl(url)
+      }
+    }
+
+    map.on('zoomend', updateChart)
     mapRef.current = map
     return () => {
+      map.off('zoomend', updateChart)
       map.remove()
       mapRef.current = null
       markersRef.current.clear()
