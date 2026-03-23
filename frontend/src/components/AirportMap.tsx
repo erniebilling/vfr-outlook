@@ -132,6 +132,12 @@ export default function AirportMap({
         weight: isSelected ? 2.5 : isEndpoint ? 2.5 : 1,
       })
 
+      marker.bindTooltip(airport.icao, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -6],
+        className: 'leaflet-vfr-tooltip',
+      })
       marker.bindPopup(buildPopup(airport, dayIndex), { maxWidth: 240 })
       if (onSelect) marker.on('click', () => onSelect(airport.icao))
       marker.addTo(map)
