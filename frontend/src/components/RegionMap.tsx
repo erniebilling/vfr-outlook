@@ -1,131 +1,128 @@
 /**
  * Interactive map for the regional dashboard.
- * Uses Leaflet + react-leaflet with OpenStreetMap tiles.
- * Airports render as circle markers colored by their VFR score for the
- * currently-selected forecast day.
+ * Uses Leaflet directly (no react-leaflet) to avoid React context issues.
  */
-import { useEffect } from 'react'
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap } from 'react-leaflet'
+import { useEffect, useRef } from 'react'
 import type { AirportForecast } from '../types/forecast'
 import { scoreColor, scoreLabel, formatDate } from '../lib/score'
+import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-
-// Recenter + rezoom whenever the center airport or radius changes.
-function MapController({ lat, lon, radiusMiles }: { lat: number; lon: number; radiusMiles: number }) {
-  const map = useMap()
-  useEffect(() => {
-    // Pick a zoom level that shows roughly the full radius circle.
-    // ~69 miles per degree latitude; we want the radius to fill ~40% of viewport.
-    const deg = radiusMiles / 69
-    const zoom = Math.round(Math.log2(360 / (deg * 4))) + 1
-    const clamped = Math.max(5, Math.min(12, zoom))
-    map.setView([lat, lon], clamped)
-  }, [lat, lon, radiusMiles, map])
-  return null
-}
 
 interface Props {
   airports: AirportForecast[]
   centerLat: number
   centerLon: number
   radiusMiles: number
-  dayIndex: number                        // which forecast day to color by
+  dayIndex: number
   selectedIcao: string | null
   onSelect: (icao: string) => void
 }
 
+/** Miles → approximate zoom level that shows the full radius. */
+function radiusToZoom(miles: number): number {
+  const zoom = Math.round(Math.log2(3000 / miles)) + 5
+  return Math.max(5, Math.min(12, zoom))
+}
+
 export default function RegionMap({
-  airports,
-  centerLat,
-  centerLon,
-  radiusMiles,
-  dayIndex,
-  selectedIcao,
-  onSelect,
+  airports, centerLat, centerLon, radiusMiles, dayIndex, selectedIcao, onSelect,
 }: Props) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<L.Map | null>(null)
+  const markersRef = useRef<Map<string, L.CircleMarker>>(new Map())
+
+  // Initialise map once
+  useEffect(() => {
+    if (!containerRef.current || mapRef.current) return
+
+    const map = L.map(containerRef.current, {
+      center: [centerLat, centerLon],
+      zoom: radiusToZoom(radiusMiles),
+      zoomControl: true,
+    })
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      maxZoom: 19,
+    }).addTo(map)
+
+    mapRef.current = map
+    return () => {
+      map.remove()
+      mapRef.current = null
+      markersRef.current.clear()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Recenter when airport/radius changes
+  useEffect(() => {
+    mapRef.current?.setView([centerLat, centerLon], radiusToZoom(radiusMiles))
+  }, [centerLat, centerLon, radiusMiles])
+
+  // Rebuild markers when airports or active day changes
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    // Remove old markers
+    markersRef.current.forEach(m => m.remove())
+    markersRef.current.clear()
+
+    airports.forEach(airport => {
+      const day = airport.daily_forecasts[dayIndex]
+      if (!day) return
+
+      const color = scoreColor(day.vfr_score)
+      const isCenter = !airport.distance_miles
+      const isSelected = airport.icao === selectedIcao
+
+      const marker = L.circleMarker([airport.lat, airport.lon], {
+        radius: isCenter ? 12 : isSelected ? 10 : 8,
+        color: isSelected ? '#ffffff' : color,
+        fillColor: color,
+        fillOpacity: 0.9,
+        weight: isSelected ? 2.5 : isCenter ? 2 : 1,
+      })
+
+      const windStr = day.wind_dir != null
+        ? `${day.wind_dir}°@${day.wind_kt.toFixed(0)} kt`
+        : `${day.wind_kt.toFixed(0)} kt`
+      const gustStr = day.gust_kt > 0 ? ` G${day.gust_kt.toFixed(0)}` : ''
+      const ceilStr = day.ceiling_ft != null ? `<tr><td style="color:#6b7280">Ceiling</td><td>${day.ceiling_ft.toLocaleString()} ft</td></tr>` : ''
+      const visStr = day.visibility_sm != null ? `<tr><td style="color:#6b7280">Vis</td><td>${day.visibility_sm} sm</td></tr>` : ''
+      const issuesStr = day.issues.length
+        ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #374151;color:#fb923c;font-size:11px">${day.issues.map(i => `⚠ ${i}`).join('<br>')}</div>`
+        : ''
+
+      marker.bindPopup(`
+        <div style="min-width:180px;font-family:monospace;font-size:12px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+            <strong style="color:#60a5fa;font-size:14px">${airport.icao}</strong>
+            <span style="color:#9ca3af">${formatDate(day.date)}</span>
+          </div>
+          <div style="color:#e5e7eb;margin-bottom:6px">${airport.name}</div>
+          <table style="width:100%;border-collapse:collapse">
+            <tr><td style="color:#6b7280">Score</td><td><strong style="color:${color}">${day.vfr_score.toFixed(0)} — ${scoreLabel(day.vfr_score)}</strong></td></tr>
+            <tr><td style="color:#6b7280">Wind</td><td>${windStr}${gustStr}</td></tr>
+            ${ceilStr}${visStr}
+            <tr><td style="color:#6b7280">Precip</td><td>${day.precip_probability.toFixed(0)}%</td></tr>
+          </table>
+          ${issuesStr}
+          <div style="margin-top:6px;color:#4b5563;font-size:11px;text-transform:capitalize">${day.confidence} confidence</div>
+        </div>
+      `, { maxWidth: 240 })
+
+      marker.on('click', () => onSelect(airport.icao))
+      marker.addTo(map)
+      markersRef.current.set(airport.icao, marker)
+    })
+  }, [airports, dayIndex, selectedIcao, onSelect])
+
   return (
-    <div className="rounded-xl overflow-hidden border border-gray-800" style={{ height: 400 }}>
-      <MapContainer
-        center={[centerLat, centerLon]}
-        zoom={8}
-        style={{ height: '100%', width: '100%', background: '#0f172a' }}
-        zoomControl={true}
-        scrollWheelZoom={true}
-      >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        />
-        <MapController lat={centerLat} lon={centerLon} radiusMiles={radiusMiles} />
-
-        {airports.map(airport => {
-          const day = airport.daily_forecasts[dayIndex]
-          if (!day) return null
-          const color = scoreColor(day.vfr_score)
-          const isCenter = airport.distance_miles === 0 || airport.distance_miles == null
-          const isSelected = airport.icao === selectedIcao
-
-          return (
-            <CircleMarker
-              key={airport.icao}
-              center={[airport.lat, airport.lon]}
-              radius={isCenter ? 12 : isSelected ? 10 : 8}
-              pathOptions={{
-                color: isSelected ? '#ffffff' : color,
-                fillColor: color,
-                fillOpacity: 0.9,
-                weight: isSelected ? 2.5 : isCenter ? 2 : 1,
-              }}
-              eventHandlers={{ click: () => onSelect(airport.icao) }}
-            >
-              <Popup>
-                <div style={{ minWidth: 180, fontFamily: 'monospace' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <strong style={{ color: '#60a5fa', fontSize: 14 }}>{airport.icao}</strong>
-                    <span style={{ color: '#9ca3af', fontSize: 12 }}>{formatDate(day.date)}</span>
-                  </div>
-                  <div style={{ color: '#e5e7eb', fontSize: 12, marginBottom: 6 }}>{airport.name}</div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span style={{ color: '#6b7280' }}>Score</span>
-                    <strong style={{ color }}>{day.vfr_score.toFixed(0)} — {scoreLabel(day.vfr_score)}</strong>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span style={{ color: '#6b7280' }}>Wind</span>
-                    <span style={{ color: '#e5e7eb' }}>
-                      {day.wind_dir != null ? `${day.wind_dir}°@` : ''}{day.wind_kt.toFixed(0)} kt
-                      {day.gust_kt > 0 ? ` G${day.gust_kt.toFixed(0)}` : ''}
-                    </span>
-                  </div>
-                  {day.ceiling_ft != null && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ color: '#6b7280' }}>Ceiling</span>
-                      <span style={{ color: '#e5e7eb' }}>{day.ceiling_ft.toLocaleString()} ft</span>
-                    </div>
-                  )}
-                  {day.visibility_sm != null && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                      <span style={{ color: '#6b7280' }}>Vis</span>
-                      <span style={{ color: '#e5e7eb' }}>{day.visibility_sm} sm</span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span style={{ color: '#6b7280' }}>Precip</span>
-                    <span style={{ color: '#e5e7eb' }}>{day.precip_probability.toFixed(0)}%</span>
-                  </div>
-                  {day.issues.length > 0 && (
-                    <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #374151', color: '#fb923c', fontSize: 11 }}>
-                      {day.issues.map((iss, i) => <div key={i}>⚠ {iss}</div>)}
-                    </div>
-                  )}
-                  <div style={{ marginTop: 6, color: '#4b5563', fontSize: 11, textTransform: 'capitalize' }}>
-                    {day.confidence} confidence · {day.source.replace('_', ' ')}
-                  </div>
-                </div>
-              </Popup>
-            </CircleMarker>
-          )
-        })}
-      </MapContainer>
-    </div>
+    <div
+      ref={containerRef}
+      className="rounded-xl overflow-hidden border border-gray-800"
+      style={{ height: 400 }}
+    />
   )
 }
