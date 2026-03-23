@@ -216,11 +216,13 @@ export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange }: Props
     ] as [{ lat: number; lon: number }, { lat: number; lon: number }]
   }, [data])
 
-  // Route line through all corridor airports in order
-  const routeLine = useMemo(() =>
-    data?.airports.map(a => ({ lat: a.lat, lon: a.lon })),
-    [data]
-  )
+  // Route line: straight from origin to destination only
+  const routeLine = useMemo(() => {
+    if (!data || data.airports.length < 2) return undefined
+    const first = data.airports[0]
+    const last = data.airports[data.airports.length - 1]
+    return [{ lat: first.lat, lon: first.lon }, { lat: last.lat, lon: last.lon }]
+  }, [data])
 
   return (
     <div className="space-y-6">
