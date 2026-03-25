@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vfr-backend
+  labels:
+    app: vfr-backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vfr-backend
+  template:
+    metadata:
+      labels:
+        app: vfr-backend
+    spec:
+      containers:
+        - name: vfr-backend
+          image: vfr-backend:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CORS_ORIGINS
+              value: "https://vfr-watch.example.com"  # replace with your domain
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vfr-backend
+spec:
+  selector:
+    app: vfr-backend
+  ports:
+    - port: 8000
+      targetPort: 8000

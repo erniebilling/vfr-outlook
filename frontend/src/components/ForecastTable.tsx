@@ -185,11 +185,13 @@ export default function ForecastTable({ data }: Props) {
         </div>
       )}
 
-      {/* Current score summary */}
-      <div className="flex items-center gap-3">
-        <ScoreCell score={data.current_score} showLabel className="px-4 py-2 text-base" />
-        <span className="text-gray-400 text-sm">Current conditions</span>
-      </div>
+      {/* Current score summary — only when METAR available */}
+      {data.current_metar && (
+        <div className="flex items-center gap-3">
+          <ScoreCell score={data.current_score} showLabel className="px-4 py-2 text-base" />
+          <span className="text-gray-400 text-sm">Current conditions</span>
+        </div>
+      )}
 
       {/* 14-day table */}
       <div className="overflow-x-auto">
