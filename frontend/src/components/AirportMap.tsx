@@ -82,6 +82,7 @@ export default function AirportMap({
     }).addTo(map)
 
     // FAA VFR Sectional — overlaid at zoom 8–12
+    // tileSize 512 + zoomOffset -1 requests one zoom level higher for sharper tiles
     const sectional = L.tileLayer(
       'https://tiles.arcgis.com/tiles/ssFJjBXIUyZDrSYZ/arcgis/rest/services/VFR_Sectional/MapServer/tile/{z}/{y}/{x}',
       { attribution: 'Aeronautical data &copy; FAA', maxZoom: 12 },
@@ -102,7 +103,7 @@ export default function AirportMap({
 
     function updateLayers() {
       const z = map.getZoom()
-      if (z >= 8) {
+      if (z >= 10) {
         if (!map.hasLayer(sectional)) sectional.addTo(map)
       } else {
         if (map.hasLayer(sectional)) map.removeLayer(sectional)
