@@ -116,6 +116,17 @@ export default function App() {
           />
         )}
       </main>
+
+      <footer className="border-t border-yellow-700/50 bg-yellow-950/40 px-6 py-3">
+        <p className="max-w-7xl mx-auto text-xs text-yellow-300/80 text-center">
+          <span className="font-semibold text-yellow-300">Planning aid only.</span>{' '}
+          Always obtain a full weather briefing from Flight Service (1-800-WX-BRIEF) or{' '}
+          <a href="https://www.1800wxbrief.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-yellow-200">
+            1800wxbrief.com
+          </a>{' '}
+          before flight. Check NOTAMs and TFRs. You are PIC — the final go/no-go decision is always yours.
+        </p>
+      </footer>
     </div>
   )
 }
