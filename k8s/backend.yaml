@@ -16,11 +16,11 @@ spec:
     spec:
       containers:
         - name: vfr-backend
-          image: vfr-backend:latest
+          image: registry.registry.svc.cluster.local:5000/vfr-backend:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: CORS_ORIGINS
-              value: "https://vfr-watch.example.com"  # replace with your domain
+              value: "https://vfr-outlook.example.com"  # replace with your domain
           ports:
             - containerPort: 8000
           readinessProbe:

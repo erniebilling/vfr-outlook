@@ -1,0 +1,115 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: vfr-outlook-pipeline
+  namespace: tekton-pipelines
+  annotations:
+    tekton.dev/displayName: "vfr-outlook Build & Deploy (ARM64)"
+    tekton.dev/description: >
+      Clone → parallel kaniko build (backend + frontend) →
+      push to local registry → kubectl deploy to vfr-outlook namespace.
+  labels:
+    app.kubernetes.io/component: pipeline
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  params:
+    - name: repo-url
+      type: string
+      description: HTTPS URL of the Git repository to clone
+    - name: revision
+      type: string
+      description: Git revision (branch, tag, or commit SHA) to build
+      default: main
+    - name: image-tag
+      type: string
+      description: Image tag — use git commit SHA for immutable references
+      default: latest
+    - name: deploy-namespace
+      type: string
+      default: vfr-outlook
+
+  workspaces:
+    - name: shared-data
+      description: Shared PVC — source code flows between tasks here
+    - name: git-credentials
+      description: Optional secret with 'username'/'password' for private repos
+      optional: true
+
+  results:
+    - name: BACKEND_IMAGE_URL
+      description: Full URL of the pushed backend image
+      value: $(tasks.build-backend.results.IMAGE_URL)
+    - name: FRONTEND_IMAGE_URL
+      description: Full URL of the pushed frontend image
+      value: $(tasks.build-frontend.results.IMAGE_URL)
+    - name: COMMIT_SHA
+      description: Git commit SHA that was built
+      value: $(tasks.clone-source.results.commit)
+
+  tasks:
+    # ── 1. Clone ──────────────────────────────────────────────────────────────
+    - name: clone-source
+      taskRef:
+        kind: Task
+        name: git-clone          # deployed in tekton-pipelines namespace
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.revision)
+        - name: depth
+          value: "1"
+        - name: deleteExisting
+          value: "true"
+      workspaces:
+        - name: output
+          workspace: shared-data
+        - name: basic-auth
+          workspace: git-credentials
+
+    # ── 2a. Build backend (parallel with frontend) ────────────────────────────
+    - name: build-backend
+      runAfter: [clone-source]
+      taskRef:
+        kind: Task
+        name: build-backend
+      params:
+        - name: image
+          value: registry.registry.svc.cluster.local:5000/vfr-backend
+        - name: tag
+          value: $(tasks.clone-source.results.commit)
+      workspaces:
+        - name: source
+          workspace: shared-data
+
+    # ── 2b. Build frontend (parallel with backend) ────────────────────────────
+    - name: build-frontend
+      runAfter: [clone-source]
+      taskRef:
+        kind: Task
+        name: build-frontend
+      params:
+        - name: image
+          value: registry.registry.svc.cluster.local:5000/vfr-frontend
+        - name: tag
+          value: $(tasks.clone-source.results.commit)
+      workspaces:
+        - name: source
+          workspace: shared-data
+
+    # ── 3. Deploy (after both builds succeed) ─────────────────────────────────
+    - name: deploy-app
+      runAfter: [build-backend, build-frontend]
+      taskRef:
+        kind: Task
+        name: deploy-vfr
+      params:
+        - name: backend-image
+          value: $(tasks.build-backend.results.IMAGE_URL)
+        - name: frontend-image
+          value: $(tasks.build-frontend.results.IMAGE_URL)
+        - name: deploy-namespace
+          value: $(params.deploy-namespace)
+      workspaces:
+        - name: source
+          workspace: shared-data

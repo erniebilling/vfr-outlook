@@ -5,8 +5,17 @@
 	"features": {
 		"ghcr.io/devcontainers/features/node:1": {
 			"version": "22"
+		},
+		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+			"version": "latest",
+			"helm": "none",
+			"minikube": "none"
 		}
 	},
+
+	"mounts": [
+		"source=${localEnv:HOME}/.kube,target=/home/vscode/.kube,type=bind,consistency=cached"
+	],
 
 	"forwardPorts": [8000, 5173],
 	"portsAttributes": {

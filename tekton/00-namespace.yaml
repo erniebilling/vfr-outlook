@@ -1,0 +1,46 @@
+# The tekton-pipelines namespace already exists in the cluster.
+# This file provisions the app deployment namespace and the RBAC the
+# pipeline SA needs to manage workloads there.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vfr-outlook
+  labels:
+    app.kubernetes.io/part-of: tekton-ci
+---
+# Grant the existing tekton-pipeline-sa (in tekton-pipelines) the ability to
+# manage deployments and services in the vfr-outlook namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vfr-deploy-role
+  namespace: vfr-outlook
+  labels:
+    app.kubernetes.io/part-of: tekton-ci
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["services", "pods", "configmaps"]
+    verbs: ["get", "list", "create", "update", "patch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vfr-deploy-rolebinding
+  namespace: vfr-outlook
+  labels:
+    app.kubernetes.io/part-of: tekton-ci
+subjects:
+  - kind: ServiceAccount
+    name: tekton-pipeline-sa
+    namespace: tekton-pipelines
+roleRef:
+  kind: Role
+  name: vfr-deploy-role
+  apiGroup: rbac.authorization.k8s.io

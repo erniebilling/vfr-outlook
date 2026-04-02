@@ -1,0 +1,120 @@
+# Tekton Triggers — fires vfr-outlook-pipeline on every push to main.
+#
+# Prerequisites (already deployed in the cluster):
+#   - tekton-triggers controller + core-interceptors
+#   - secret/github-webhook-secret in tekton-pipelines namespace
+#   - EventListener el-github-webhook (exposes port 8080 via cloudflared)
+#
+# This file adds a new Trigger to the existing EventListener so vfr-outlook
+# pushes are handled alongside any other repos already wired up.
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerBinding
+metadata:
+  name: vfr-outlook-binding
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/component: trigger
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  params:
+    - name: git-repo-url
+      value: $(body.repository.clone_url)
+    - name: git-revision
+      value: $(body.head_commit.id)
+    - name: git-repo-name
+      value: $(body.repository.name)
+    - name: git-ref
+      value: $(body.ref)
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: TriggerTemplate
+metadata:
+  name: vfr-outlook-template
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/component: trigger
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  params:
+    - name: git-repo-url
+      description: HTTPS clone URL of the repository
+    - name: git-revision
+      description: Full commit SHA to build
+    - name: git-repo-name
+      description: Short repository name
+    - name: git-ref
+      description: Git ref that was pushed (e.g. refs/heads/main)
+  resourcetemplates:
+    - apiVersion: tekton.dev/v1
+      kind: PipelineRun
+      metadata:
+        generateName: vfr-outlook-run-
+        namespace: tekton-pipelines
+        labels:
+          app.kubernetes.io/part-of: tekton-ci
+          ci.tekton.dev/repo: $(tt.params.git-repo-name)
+          tekton.dev/pipeline: vfr-outlook-pipeline
+        annotations:
+          ci.tekton.dev/git-url: $(tt.params.git-repo-url)
+          ci.tekton.dev/git-revision: $(tt.params.git-revision)
+          ci.tekton.dev/git-ref: $(tt.params.git-ref)
+      spec:
+        pipelineRef:
+          name: vfr-outlook-pipeline
+        taskRunTemplate:
+          serviceAccountName: tekton-pipeline-sa
+        params:
+          - name: repo-url
+            value: $(tt.params.git-repo-url)
+          - name: revision
+            value: $(tt.params.git-revision)
+          - name: image-tag
+            value: $(tt.params.git-revision)
+          - name: deploy-namespace
+            value: vfr-outlook
+        timeouts:
+          pipeline: 30m
+          tasks: 25m
+        workspaces:
+          - name: shared-data
+            volumeClaimTemplate:
+              spec:
+                accessModes: [ReadWriteOnce]
+                storageClassName: longhorn-fast
+                resources:
+                  requests:
+                    storage: 1Gi
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: Trigger
+metadata:
+  name: vfr-outlook-trigger
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/component: trigger
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  interceptors:
+    # Validate the GitHub HMAC signature using the existing cluster secret
+    - ref:
+        name: github
+      params:
+        - name: secretRef
+          value:
+            secretName: github-webhook-secret
+            secretKey: secretToken
+        - name: eventTypes
+          value: [push]
+    # Only fire for pushes to main on the vfr-outlook repo
+    - ref:
+        name: cel
+      params:
+        - name: filter
+          value: >-
+            body.ref == 'refs/heads/main' &&
+            body.repository.name == 'vfr-outlook'
+  bindings:
+    - ref: vfr-outlook-binding
+  template:
+    ref: vfr-outlook-template

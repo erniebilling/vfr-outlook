@@ -1,0 +1,52 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: build-backend
+  namespace: tekton-pipelines
+  annotations:
+    tekton.dev/displayName: "Build & Push vfr-backend (kaniko, ARM64)"
+    tekton.dev/description: >
+      Builds the backend container image with kaniko and pushes it to the
+      local cluster registry at registry.registry.svc.cluster.local:5000.
+  labels:
+    app.kubernetes.io/component: task
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  params:
+    - name: image
+      type: string
+      description: >
+        Full image ref without tag,
+        e.g. registry.registry.svc.cluster.local:5000/vfr-backend
+    - name: tag
+      type: string
+      default: latest
+      description: Image tag (use git commit SHA for traceability)
+  results:
+    - name: IMAGE_DIGEST
+      description: Digest of the built image (sha256:...)
+    - name: IMAGE_URL
+      description: Full image URL including tag
+  workspaces:
+    - name: source
+      description: Cloned repo source
+  steps:
+    - name: build-and-push
+      image: gcr.io/kaniko-project/executor:latest
+      securityContext:
+        runAsUser: 0
+      args:
+        - --dockerfile=Dockerfile
+        - --context=dir://$(workspaces.source.path)/backend
+        - --destination=$(params.image):$(params.tag)
+        - --skip-tls-verify
+        - --cache=true
+        - --cache-repo=$(params.image)-cache
+        - --digest-file=/tekton/results/IMAGE_DIGEST
+    - name: write-image-url
+      image: alpine:3.19
+      script: |
+        #!/bin/sh
+        printf "%s:%s" "$(params.image)" "$(params.tag)" > $(results.IMAGE_URL.path)
+        echo "Built and pushed: $(params.image):$(params.tag)"
+        echo "Digest: $(cat $(results.IMAGE_DIGEST.path))"

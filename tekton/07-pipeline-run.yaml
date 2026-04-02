@@ -1,0 +1,40 @@
+# Manual PipelineRun — copy, fill in the revision, and apply.
+# For automated runs on git push, see 08-trigger-template.yaml.
+#
+# Usage:
+#   export SHA=$(git rev-parse HEAD)
+#   sed "s/GIT_SHA/${SHA}/g" tekton/07-pipeline-run.yaml | kubectl apply -f -
+apiVersion: tekton.dev/v1
+kind: PipelineRun
+metadata:
+  generateName: vfr-outlook-run-
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  pipelineRef:
+    name: vfr-outlook-pipeline
+  taskRunTemplate:
+    serviceAccountName: tekton-pipeline-sa
+  params:
+    - name: repo-url
+      value: https://github.com/YOUR_ORG/vfr-outlook   # replace
+    - name: revision
+      value: GIT_SHA                                     # replace or use sed above
+    - name: image-tag
+      value: GIT_SHA                                     # replace or use sed above
+    - name: deploy-namespace
+      value: vfr-outlook
+  timeouts:
+    pipeline: 30m
+    tasks: 25m
+  workspaces:
+    # Fresh PVC per run — longhorn-fast for build speed
+    - name: shared-data
+      volumeClaimTemplate:
+        spec:
+          accessModes: [ReadWriteOnce]
+          storageClassName: longhorn-fast
+          resources:
+            requests:
+              storage: 1Gi

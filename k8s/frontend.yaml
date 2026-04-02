@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - name: vfr-frontend
-          image: vfr-frontend:latest
+          image: registry.registry.svc.cluster.local:5000/vfr-frontend:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80

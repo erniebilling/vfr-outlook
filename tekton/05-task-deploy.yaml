@@ -1,0 +1,69 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: deploy-vfr
+  namespace: tekton-pipelines
+  annotations:
+    tekton.dev/displayName: "Deploy vfr-outlook (kubectl, ARM64)"
+    tekton.dev/description: >
+      Applies k8s manifests from the repo then does a rolling image update for
+      the backend and frontend deployments in the vfr-outlook namespace.
+  labels:
+    app.kubernetes.io/component: task
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  params:
+    - name: backend-image
+      type: string
+      description: Full backend image ref including tag
+    - name: frontend-image
+      type: string
+      description: Full frontend image ref including tag
+    - name: deploy-namespace
+      type: string
+      default: vfr-outlook
+    - name: wait-timeout
+      type: string
+      default: "3m"
+  results:
+    - name: deployment-status
+      description: Final rollout status message
+  workspaces:
+    - name: source
+      description: Cloned repo (provides k8s/ manifests)
+  steps:
+    - name: apply-manifests
+      image: alpine/k8s:1.31.4
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        kubectl apply -f $(workspaces.source.path)/k8s/ \
+          -n $(params.deploy-namespace) \
+          --recursive
+
+    - name: update-images
+      image: alpine/k8s:1.31.4
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        kubectl set image deployment/vfr-backend \
+          vfr-backend=$(params.backend-image) \
+          -n $(params.deploy-namespace)
+        kubectl set image deployment/vfr-frontend \
+          vfr-frontend=$(params.frontend-image) \
+          -n $(params.deploy-namespace)
+
+    - name: wait-for-rollout
+      image: alpine/k8s:1.31.4
+      script: |
+        #!/bin/bash
+        set -euo pipefail
+        kubectl rollout status deployment/vfr-backend \
+          -n $(params.deploy-namespace) \
+          --timeout=$(params.wait-timeout)
+        kubectl rollout status deployment/vfr-frontend \
+          -n $(params.deploy-namespace) \
+          --timeout=$(params.wait-timeout)
+        STATUS="Deployed $(params.backend-image) and $(params.frontend-image) to $(params.deploy-namespace)"
+        echo "${STATUS}"
+        printf "%s" "${STATUS}" > $(results.deployment-status.path)

@@ -17,7 +17,7 @@ AVIATION_WEATHER_BASE = "https://aviationweather.gov/api/data"
 NOAA_POINTS_BASE = "https://api.weather.gov/points"
 OPEN_METEO_BASE = "https://api.open-meteo.com/v1/forecast"
 
-NOAA_HEADERS = {"User-Agent": "VFRWatch/1.0 (https://github.com/vfr-watch)"}
+NOAA_HEADERS = {"User-Agent": "VFRWatch/1.0 (https://github.com/vfr-outlook)"}
 
 # Confidence tiers by forecast day offset from today
 def _confidence(day_offset: int) -> str:

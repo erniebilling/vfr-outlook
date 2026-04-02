@@ -121,7 +121,7 @@ All external APIs are free and require no API key.
 ## Project layout
 
 ```
-vfr-watch/
+vfr-outlook/
 ├── backend/
 │   ├── main.py                  FastAPI app + CORS
 │   ├── routers/airport.py       API endpoints
