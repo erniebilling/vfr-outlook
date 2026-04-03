@@ -1,0 +1,20 @@
+# Tekton EventListener — receives GitHub webhook POSTs and dispatches triggers.
+#
+# Exposes port 8080 inside the cluster; wire up an Ingress or cloudflared
+# tunnel to make it reachable from GitHub.
+#
+# Apply:
+#   kubectl apply -f tekton/09-event-listener.yaml
+---
+apiVersion: triggers.tekton.dev/v1beta1
+kind: EventListener
+metadata:
+  name: el-github-webhook
+  namespace: tekton-pipelines
+  labels:
+    app.kubernetes.io/component: eventlistener
+    app.kubernetes.io/part-of: tekton-ci
+spec:
+  serviceAccountName: tekton-pipeline-sa
+  triggers:
+    - triggerRef: vfr-outlook-trigger
