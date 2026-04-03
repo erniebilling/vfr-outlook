@@ -22,7 +22,7 @@ export default function App() {
       <header className="border-b border-gray-800 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">✈ VFR Watch</h1>
+            <h1 className="text-xl font-bold tracking-tight">✈ VFR Outlook</h1>
             <p className="text-xs text-gray-500">14-day VFR probability forecast</p>
           </div>
           <div className="flex items-center gap-4">

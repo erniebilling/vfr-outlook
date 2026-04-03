@@ -18,7 +18,7 @@ spec:
     serviceAccountName: tekton-pipeline-sa
   params:
     - name: repo-url
-      value: https://github.com/YOUR_ORG/vfr-outlook   # replace
+      value: https://github.com/erniebilling/vfr-outlook   # replace
     - name: revision
       value: GIT_SHA                                     # replace or use sed above
     - name: image-tag

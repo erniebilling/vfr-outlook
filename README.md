@@ -1,4 +1,4 @@
-# VFR Watch
+# VFR Outlook
 
 A 14-day VFR probability dashboard for GA pilots. Enter any US airport ICAO code and instantly see color-coded flying conditions for every airport within your chosen radius — no account, no login, no fluff.
 
@@ -154,4 +154,4 @@ vfr-outlook/
 
 ## Safety notice
 
-VFR Watch is a planning aid only. Always obtain a full weather briefing from Flight Service (1-800-WX-BRIEF) or [1800wxbrief.com](https://www.1800wxbrief.com) before flight. Check NOTAMs and TFRs. You are PIC — the final go/no-go decision is always yours.
+VFR Outlook is a planning aid only. Always obtain a full weather briefing from Flight Service (1-800-WX-BRIEF) or [1800wxbrief.com](https://www.1800wxbrief.com) before flight. Check NOTAMs and TFRs. You are PIC — the final go/no-go decision is always yours.

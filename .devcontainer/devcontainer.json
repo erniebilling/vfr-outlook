@@ -1,5 +1,5 @@
 {
-	"name": "VFR Watch",
+	"name": "VFR Outlook",
 	"image": "mcr.microsoft.com/devcontainers/python:2-3.12-bullseye",
 
 	"features": {

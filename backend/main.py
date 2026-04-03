@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from routers import airport
 
 app = FastAPI(
-    title="VFR Watch API",
+    title="VFR Outlook API",
     description="VFR probability forecasts for GA pilots",
     version="0.1.0",
 )
