@@ -9,7 +9,7 @@
 apiVersion: triggers.tekton.dev/v1beta1
 kind: EventListener
 metadata:
-  name: el-github-webhook
+  name: github-webhook
   namespace: tekton-pipelines
   labels:
     app.kubernetes.io/component: eventlistener
