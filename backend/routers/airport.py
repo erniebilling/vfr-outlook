@@ -15,11 +15,6 @@ _tracer = get_tracer("vfr-outlook.routers.airport")
 _meter = get_meter("vfr-outlook.routers.airport")
 
 # ── Metrics instruments ───────────────────────────────────────────────────────
-_forecast_requests = _meter.create_counter(
-    "vfr.forecast.requests",
-    description="Total number of single-airport forecast requests",
-    unit="1",
-)
 _region_requests = _meter.create_counter(
     "vfr.region.requests",
     description="Total number of region forecast requests",
@@ -35,11 +30,6 @@ _region_airports_returned = _meter.create_histogram(
     description="Number of airports returned per region request",
     unit="1",
 )
-_forecast_duration = _meter.create_histogram(
-    "vfr.forecast.duration",
-    description="Time to compute a single-airport forecast",
-    unit="ms",
-)
 
 _DEFAULT_RADIUS = 100  # miles
 _DEFAULT_MAX_AIRPORTS = 20
@@ -49,9 +39,7 @@ _HARD_MAX_AIRPORTS = 50  # cap to keep response times reasonable
 @router.get("/airport/{icao}/forecast", response_model=AirportForecast)
 async def airport_forecast(icao: str):
     """14-day VFR probability forecast for a single airport."""
-    import time
     icao = icao.upper().strip()
-    _forecast_requests.add(1, {"icao": icao})
 
     with _tracer.start_as_current_span("airport_forecast") as span:
         span.set_attribute("airport.icao", icao)
@@ -64,7 +52,6 @@ async def airport_forecast(icao: str):
         span.set_attribute("airport.lat", info["lat"])
         span.set_attribute("airport.lon", info["lon"])
 
-        t0 = time.monotonic()
         result = await get_airport_forecast(
             icao=icao,
             name=info["name"],
@@ -75,7 +62,6 @@ async def airport_forecast(icao: str):
             runways=info.get("runways", []),
             max_rwy_ft=info.get("max_rwy_ft"),
         )
-        _forecast_duration.record((time.monotonic() - t0) * 1000, {"icao": icao})
         return result
 
 

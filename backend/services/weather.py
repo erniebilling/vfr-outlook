@@ -11,6 +11,19 @@ from typing import Optional
 from models.forecast import DayForecast, AirportForecast, Advisory, Runway
 from services.scorer import compute_vfr_score
 from services.advisories import get_advisories_for_point
+from otel import get_meter
+
+_meter = get_meter("vfr-outlook.services.weather")
+_forecast_requests = _meter.create_counter(
+    "vfr.forecast.requests",
+    description="Total number of single-airport forecast computations",
+    unit="1",
+)
+_forecast_duration = _meter.create_histogram(
+    "vfr.forecast.duration",
+    description="Time to compute a single-airport forecast",
+    unit="ms",
+)
 
 
 AVIATION_WEATHER_BASE = "https://aviationweather.gov/api/data"
@@ -300,6 +313,9 @@ async def get_airport_forecast(
     max_rwy_ft: Optional[int] = None,
 ) -> AirportForecast:
     """Fetch all weather data for one airport and return a complete AirportForecast."""
+    import time
+    t0 = time.monotonic()
+    _forecast_requests.add(1, {"icao": icao})
     async with httpx.AsyncClient() as client:
         metar_task = fetch_metar(client, icao)
         noaa_task = fetch_noaa_hourly(client, lat, lon)
@@ -325,6 +341,7 @@ async def get_airport_forecast(
 
     rwy_models = [Runway(**r) for r in (runways or [])]
 
+    _forecast_duration.record((time.monotonic() - t0) * 1000, {"icao": icao})
     return AirportForecast(
         icao=icao,
         name=name,

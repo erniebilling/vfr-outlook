@@ -35,7 +35,7 @@ app.include_router(airport.router)
 
 # Instrument FastAPI (adds server-side spans for every request) and httpx
 # (propagates trace context to outbound weather API calls).
-FastAPIInstrumentor.instrument_app(app)
+FastAPIInstrumentor.instrument_app(app, excluded_urls="/health")
 HTTPXClientInstrumentor().instrument()
 
 
