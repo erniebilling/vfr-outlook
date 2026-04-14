@@ -1,9 +1,17 @@
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI
 
 load_dotenv()
+
+# Configure OpenTelemetry before anything else so auto-instrumentation patches
+# libraries (httpx, etc.) at import time.
+from otel import configure_otel
+configure_otel()
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from routers import airport
 
 app = FastAPI(
@@ -24,6 +32,11 @@ app.add_middleware(
 )
 
 app.include_router(airport.router)
+
+# Instrument FastAPI (adds server-side spans for every request) and httpx
+# (propagates trace context to outbound weather API calls).
+FastAPIInstrumentor.instrument_app(app)
+HTTPXClientInstrumentor().instrument()
 
 
 @app.get("/health")

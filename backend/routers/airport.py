@@ -7,8 +7,39 @@ from models.forecast import AirportForecast, RegionResponse, TripResponse, TripD
 from services.weather import get_airport_forecast
 from services.airports import get_airport, search_airports as db_search, airports_within_radius, airports_in_corridor, _haversine_miles
 from services.scorer import DEFAULT_CRITERIA
+from otel import get_tracer, get_meter
 
 router = APIRouter(prefix="/api/v1", tags=["airport"])
+
+_tracer = get_tracer("vfr-outlook.routers.airport")
+_meter = get_meter("vfr-outlook.routers.airport")
+
+# ── Metrics instruments ───────────────────────────────────────────────────────
+_forecast_requests = _meter.create_counter(
+    "vfr.forecast.requests",
+    description="Total number of single-airport forecast requests",
+    unit="1",
+)
+_region_requests = _meter.create_counter(
+    "vfr.region.requests",
+    description="Total number of region forecast requests",
+    unit="1",
+)
+_trip_requests = _meter.create_counter(
+    "vfr.trip.requests",
+    description="Total number of trip forecast requests",
+    unit="1",
+)
+_region_airports_returned = _meter.create_histogram(
+    "vfr.region.airports_returned",
+    description="Number of airports returned per region request",
+    unit="1",
+)
+_forecast_duration = _meter.create_histogram(
+    "vfr.forecast.duration",
+    description="Time to compute a single-airport forecast",
+    unit="ms",
+)
 
 _DEFAULT_RADIUS = 100  # miles
 _DEFAULT_MAX_AIRPORTS = 20
@@ -18,21 +49,34 @@ _HARD_MAX_AIRPORTS = 50  # cap to keep response times reasonable
 @router.get("/airport/{icao}/forecast", response_model=AirportForecast)
 async def airport_forecast(icao: str):
     """14-day VFR probability forecast for a single airport."""
+    import time
     icao = icao.upper().strip()
-    info = get_airport(icao)
-    if not info:
-        raise HTTPException(status_code=404, detail=f"Airport '{icao}' not found.")
+    _forecast_requests.add(1, {"icao": icao})
 
-    return await get_airport_forecast(
-        icao=icao,
-        name=info["name"],
-        lat=info["lat"],
-        lon=info["lon"],
-        elevation_ft=info.get("elev"),
-        distance_miles=None,
-        runways=info.get("runways", []),
-        max_rwy_ft=info.get("max_rwy_ft"),
-    )
+    with _tracer.start_as_current_span("airport_forecast") as span:
+        span.set_attribute("airport.icao", icao)
+        info = get_airport(icao)
+        if not info:
+            span.set_attribute("error", True)
+            raise HTTPException(status_code=404, detail=f"Airport '{icao}' not found.")
+
+        span.set_attribute("airport.name", info["name"])
+        span.set_attribute("airport.lat", info["lat"])
+        span.set_attribute("airport.lon", info["lon"])
+
+        t0 = time.monotonic()
+        result = await get_airport_forecast(
+            icao=icao,
+            name=info["name"],
+            lat=info["lat"],
+            lon=info["lon"],
+            elevation_ft=info.get("elev"),
+            distance_miles=None,
+            runways=info.get("runways", []),
+            max_rwy_ft=info.get("max_rwy_ft"),
+        )
+        _forecast_duration.record((time.monotonic() - t0) * 1000, {"icao": icao})
+        return result
 
 
 @router.get("/region", response_model=RegionResponse)
@@ -47,56 +91,67 @@ async def region_forecast(
     Base airport is always included as the first entry.
     """
     icao = icao.upper().strip()
-    base = get_airport(icao)
-    if not base:
-        raise HTTPException(status_code=404, detail=f"Airport '{icao}' not found.")
+    _region_requests.add(1, {"icao": icao, "radius_miles": str(radius)})
 
-    # Find nearby airports. Filter to K-prefix ICAO (US public airports with aviation wx data).
-    # No max_results cap here — let the radius do the filtering, then cap after K-prefix filter.
-    nearby_all = airports_within_radius(
-        lat=base["lat"],
-        lon=base["lon"],
-        radius_miles=radius,
-        max_results=10000,
-        exclude_icao=icao,
-        min_rwy_ft=min_rwy_ft,
-    )
-    nearby = [a for a in nearby_all if a["icao"].startswith("K")][:max_airports - 1]
+    with _tracer.start_as_current_span("region_forecast") as span:
+        span.set_attribute("airport.icao", icao)
+        span.set_attribute("region.radius_miles", radius)
+        span.set_attribute("region.max_airports", max_airports)
 
-    # Build list: base first, then nearby
-    all_airports = [
-        base | {"distance_miles": 0.0},
-        *[a for a in nearby],
-    ]
+        base = get_airport(icao)
+        if not base:
+            span.set_attribute("error", True)
+            raise HTTPException(status_code=404, detail=f"Airport '{icao}' not found.")
 
-    # Fetch all forecasts concurrently
-    tasks = [
-        get_airport_forecast(
-            icao=a["icao"],
-            name=a["name"],
-            lat=a["lat"],
-            lon=a["lon"],
-            elevation_ft=a.get("elev"),
-            distance_miles=a.get("distance_miles"),
-            runways=a.get("runways", []),
-            max_rwy_ft=a.get("max_rwy_ft"),
+        # Find nearby airports. Filter to K-prefix ICAO (US public airports with aviation wx data).
+        # No max_results cap here — let the radius do the filtering, then cap after K-prefix filter.
+        nearby_all = airports_within_radius(
+            lat=base["lat"],
+            lon=base["lon"],
+            radius_miles=radius,
+            max_results=10000,
+            exclude_icao=icao,
+            min_rwy_ft=min_rwy_ft,
         )
-        for a in all_airports
-    ]
-    forecasts: list[AirportForecast] = await asyncio.gather(*tasks, return_exceptions=True)
+        nearby = [a for a in nearby_all if a["icao"].startswith("K")][:max_airports - 1]
 
-    # Drop any that errored out
-    valid = [f for f in forecasts if isinstance(f, AirportForecast)]
+        # Build list: base first, then nearby
+        all_airports = [
+            base | {"distance_miles": 0.0},
+            *[a for a in nearby],
+        ]
 
-    return RegionResponse(
-        base_airport=icao,
-        base_lat=base["lat"],
-        base_lon=base["lon"],
-        radius_miles=radius,
-        airport_count=len(valid),
-        airports=valid,
-        generated_at=datetime.now(timezone.utc),
-    )
+        # Fetch all forecasts concurrently
+        tasks = [
+            get_airport_forecast(
+                icao=a["icao"],
+                name=a["name"],
+                lat=a["lat"],
+                lon=a["lon"],
+                elevation_ft=a.get("elev"),
+                distance_miles=a.get("distance_miles"),
+                runways=a.get("runways", []),
+                max_rwy_ft=a.get("max_rwy_ft"),
+            )
+            for a in all_airports
+        ]
+        forecasts = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Drop any that errored out
+        valid = [f for f in forecasts if isinstance(f, AirportForecast)]
+
+        span.set_attribute("region.airports_returned", len(valid))
+        _region_airports_returned.record(len(valid), {"icao": icao, "radius_miles": str(radius)})
+
+        return RegionResponse(
+            base_airport=icao,
+            base_lat=base["lat"],
+            base_lon=base["lon"],
+            radius_miles=radius,
+            airport_count=len(valid),
+            airports=valid,
+            generated_at=datetime.now(timezone.utc),
+        )
 
 
 _CONFIDENCE_ORDER = {"high": 0, "medium": 1, "low": 2}
@@ -116,107 +171,117 @@ async def trip_forecast(
     """
     origin = origin.upper().strip()
     dest = dest.upper().strip()
+    _trip_requests.add(1, {"origin": origin, "dest": dest})
 
-    orig_info = get_airport(origin)
-    dest_info = get_airport(dest)
-    if not orig_info:
-        raise HTTPException(status_code=404, detail=f"Origin airport '{origin}' not found.")
-    if not dest_info:
-        raise HTTPException(status_code=404, detail=f"Destination airport '{dest}' not found.")
+    with _tracer.start_as_current_span("trip_forecast") as span:
+        span.set_attribute("trip.origin", origin)
+        span.set_attribute("trip.dest", dest)
+        span.set_attribute("trip.corridor_width_miles", corridor_width)
 
-    corridor_miles = _haversine_miles(
-        orig_info["lat"], orig_info["lon"],
-        dest_info["lat"], dest_info["lon"],
-    )
+        orig_info = get_airport(origin)
+        dest_info = get_airport(dest)
+        if not orig_info:
+            span.set_attribute("error", True)
+            raise HTTPException(status_code=404, detail=f"Origin airport '{origin}' not found.")
+        if not dest_info:
+            span.set_attribute("error", True)
+            raise HTTPException(status_code=404, detail=f"Destination airport '{dest}' not found.")
 
-    # Find corridor airports (excluding origin/dest — added separately)
-    corridor = airports_in_corridor(
-        lat1=orig_info["lat"], lon1=orig_info["lon"],
-        lat2=dest_info["lat"], lon2=dest_info["lon"],
-        width_miles=corridor_width,
-        exclude_icaos=(origin, dest),
-        min_rwy_ft=min_rwy_ft,
-    )
-    # Keep K-prefix public airports with weather data, then evenly space
-    # along the corridor rather than taking the first N (which clusters near origin).
-    k_airports_all = [a for a in corridor if a["icao"].startswith("K")]
-    n_slots = max_airports - 2  # slots between origin and dest
-    if len(k_airports_all) <= n_slots:
-        k_airports = k_airports_all
-    else:
-        # airports_in_corridor returns them sorted by along-track t ∈ [0,1].
-        # Assign each airport a t value by its index position, then pick one
-        # per evenly-spaced bucket.
-        total = len(k_airports_all)
-        bucket_size = total / n_slots
-        k_airports = []
-        for slot in range(n_slots):
-            # target index = midpoint of this bucket
-            target = (slot + 0.5) * bucket_size
-            idx = min(round(target), total - 1)
-            k_airports.append(k_airports_all[idx])
-
-    all_airports = [
-        orig_info | {"cross_track_miles": 0.0},
-        *k_airports,
-        dest_info | {"cross_track_miles": 0.0},
-    ]
-
-    # Fetch forecasts concurrently
-    tasks = [
-        get_airport_forecast(
-            icao=a["icao"],
-            name=a["name"],
-            lat=a["lat"],
-            lon=a["lon"],
-            elevation_ft=a.get("elev"),
-            distance_miles=a.get("cross_track_miles"),
-            runways=a.get("runways", []),
-            max_rwy_ft=a.get("max_rwy_ft"),
+        corridor_miles = _haversine_miles(
+            orig_info["lat"], orig_info["lon"],
+            dest_info["lat"], dest_info["lon"],
         )
-        for a in all_airports
-    ]
-    forecasts: list[AirportForecast] = [
-        f for f in await asyncio.gather(*tasks, return_exceptions=True)
-        if isinstance(f, AirportForecast)
-    ]
+        span.set_attribute("trip.corridor_miles", round(corridor_miles, 1))
 
-    # Build per-day trip scores (worst airport wins)
-    num_days = max(len(f.daily_forecasts) for f in forecasts) if forecasts else 0
-    daily_scores: list[TripDayScore] = []
-    for i in range(num_days):
-        day_scores = [
-            (f.daily_forecasts[i].vfr_score, f.icao, f.name, f.daily_forecasts[i].confidence)
-            for f in forecasts
-            if i < len(f.daily_forecasts)
+        # Find corridor airports (excluding origin/dest — added separately)
+        corridor = airports_in_corridor(
+            lat1=orig_info["lat"], lon1=orig_info["lon"],
+            lat2=dest_info["lat"], lon2=dest_info["lon"],
+            width_miles=corridor_width,
+            exclude_icaos=(origin, dest),
+            min_rwy_ft=min_rwy_ft,
+        )
+        # Keep K-prefix public airports with weather data, then evenly space
+        # along the corridor rather than taking the first N (which clusters near origin).
+        k_airports_all = [a for a in corridor if a["icao"].startswith("K")]
+        n_slots = max_airports - 2  # slots between origin and dest
+        if len(k_airports_all) <= n_slots:
+            k_airports = k_airports_all
+        else:
+            # airports_in_corridor returns them sorted by along-track t ∈ [0,1].
+            # Assign each airport a t value by its index position, then pick one
+            # per evenly-spaced bucket.
+            total = len(k_airports_all)
+            bucket_size = total / n_slots
+            k_airports = []
+            for slot in range(n_slots):
+                # target index = midpoint of this bucket
+                target = (slot + 0.5) * bucket_size
+                idx = min(round(target), total - 1)
+                k_airports.append(k_airports_all[idx])
+
+        all_airports = [
+            orig_info | {"cross_track_miles": 0.0},
+            *k_airports,
+            dest_info | {"cross_track_miles": 0.0},
         ]
-        if not day_scores:
-            continue
-        worst_score, worst_icao, worst_name, _ = min(day_scores, key=lambda x: x[0])
-        worst_conf = max(
-            (conf for _, _, _, conf in day_scores),
-            key=lambda c: _CONFIDENCE_ORDER.get(c, 99),
-        )
-        daily_scores.append(TripDayScore(
-            date=forecasts[0].daily_forecasts[i].date,
-            trip_score=worst_score,
-            limiting_icao=worst_icao,
-            limiting_name=worst_name,
-            confidence=worst_conf,
-        ))
 
-    return TripResponse(
-        origin=origin,
-        origin_name=orig_info["name"],
-        dest=dest,
-        dest_name=dest_info["name"],
-        corridor_miles=round(corridor_miles, 1),
-        corridor_width_miles=float(corridor_width),
-        airport_count=len(forecasts),
-        airports=forecasts,
-        daily_scores=daily_scores,
-        generated_at=datetime.now(timezone.utc),
-    )
+        # Fetch forecasts concurrently
+        tasks = [
+            get_airport_forecast(
+                icao=a["icao"],
+                name=a["name"],
+                lat=a["lat"],
+                lon=a["lon"],
+                elevation_ft=a.get("elev"),
+                distance_miles=a.get("cross_track_miles"),
+                runways=a.get("runways", []),
+                max_rwy_ft=a.get("max_rwy_ft"),
+            )
+            for a in all_airports
+        ]
+        forecasts = [
+            f for f in await asyncio.gather(*tasks, return_exceptions=True)
+            if isinstance(f, AirportForecast)
+        ]
+        span.set_attribute("trip.airports_fetched", len(forecasts))
+
+        # Build per-day trip scores (worst airport wins)
+        num_days = max(len(f.daily_forecasts) for f in forecasts) if forecasts else 0
+        daily_scores: list[TripDayScore] = []
+        for i in range(num_days):
+            day_scores = [
+                (f.daily_forecasts[i].vfr_score, f.icao, f.name, f.daily_forecasts[i].confidence)
+                for f in forecasts
+                if i < len(f.daily_forecasts)
+            ]
+            if not day_scores:
+                continue
+            worst_score, worst_icao, worst_name, _ = min(day_scores, key=lambda x: x[0])
+            worst_conf = max(
+                (conf for _, _, _, conf in day_scores),
+                key=lambda c: _CONFIDENCE_ORDER.get(c, 99),
+            )
+            daily_scores.append(TripDayScore(
+                date=forecasts[0].daily_forecasts[i].date,
+                trip_score=worst_score,
+                limiting_icao=worst_icao,
+                limiting_name=worst_name,
+                confidence=worst_conf,
+            ))
+
+        return TripResponse(
+            origin=origin,
+            origin_name=orig_info["name"],
+            dest=dest,
+            dest_name=dest_info["name"],
+            corridor_miles=round(corridor_miles, 1),
+            corridor_width_miles=float(corridor_width),
+            airport_count=len(forecasts),
+            airports=forecasts,
+            daily_scores=daily_scores,
+            generated_at=datetime.now(timezone.utc),
+        )
 
 
 @router.get("/airports/search")
