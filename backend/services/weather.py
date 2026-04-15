@@ -4,6 +4,7 @@ Aggregates METAR (current), NOAA hourly (days 0-7), and Open-Meteo (days 0-16).
 """
 
 import asyncio
+import logging
 import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -12,6 +13,8 @@ from models.forecast import DayForecast, AirportForecast, Advisory, Runway
 from services.scorer import compute_vfr_score
 from services.advisories import get_advisories_for_point
 from otel import get_meter
+
+_log = logging.getLogger(__name__)
 
 _meter = get_meter("vfr-outlook.services.weather")
 _forecast_requests = _meter.create_counter(
@@ -51,7 +54,8 @@ async def fetch_metar(client: httpx.AsyncClient, icao: str) -> Optional[dict]:
         resp.raise_for_status()
         data = resp.json()
         return data[0] if data else None
-    except Exception:
+    except Exception as exc:
+        _log.warning("METAR fetch failed for %s: %s", icao, exc)
         return None
 
 
@@ -68,7 +72,8 @@ async def fetch_noaa_hourly(client: httpx.AsyncClient, lat: float, lon: float) -
         hourly_resp = await client.get(forecast_url, headers=NOAA_HEADERS, timeout=15)
         hourly_resp.raise_for_status()
         return hourly_resp.json()
-    except Exception:
+    except Exception as exc:
+        _log.warning("NOAA hourly fetch failed for %.4f,%.4f: %s", lat, lon, exc)
         return None
 
 
@@ -89,7 +94,8 @@ async def fetch_open_meteo(client: httpx.AsyncClient, lat: float, lon: float) ->
         )
         resp.raise_for_status()
         return resp.json()
-    except Exception:
+    except Exception as exc:
+        _log.warning("Open-Meteo fetch failed for %.4f,%.4f: %s", lat, lon, exc)
         return None
 
 
