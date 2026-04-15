@@ -8,12 +8,24 @@ Hazards covered:
 """
 
 import asyncio
+import logging
 import time
 import httpx
 from datetime import datetime, timezone
 from typing import Optional
 
+from otel import get_meter
+
 AWWS_BASE = "https://aviationweather.gov/api/data"
+
+_log = logging.getLogger(__name__)
+
+_meter = get_meter("vfr-outlook.services.advisories")
+_advisory_fetch_errors = _meter.create_counter(
+    "vfr.advisory.fetch_errors",
+    description="Number of failed fetches to the Aviation Weather advisory endpoints",
+    unit="1",
+)
 
 # ---------------------------------------------------------------------------
 # In-process advisory cache — G-AIRMETs update at most every 3 hours, so
@@ -105,14 +117,17 @@ async def _fetch_gairmets(client: httpx.AsyncClient) -> list[dict]:
     responses = await asyncio.gather(*tasks, return_exceptions=True)
     for h, resp in zip(_GAIRMET_HAZARDS, responses):
         if isinstance(resp, Exception):
+            _log.warning("G-AIRMET fetch failed for hazard=%s: %s", h, resp)
+            _advisory_fetch_errors.add(1, {"endpoint": "gairmet", "hazard": h})
             continue
         try:
             resp.raise_for_status()
             for item in resp.json():
                 item["_hazard_key"] = h
             results.extend(resp.json())
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("G-AIRMET parse/HTTP error for hazard=%s: %s", h, exc)
+            _advisory_fetch_errors.add(1, {"endpoint": "gairmet", "hazard": h})
     return results
 
 
@@ -130,14 +145,17 @@ async def _fetch_sigmets(client: httpx.AsyncClient) -> list[dict]:
     responses = await asyncio.gather(*tasks, return_exceptions=True)
     for h, resp in zip(_SIGMET_HAZARDS, responses):
         if isinstance(resp, Exception):
+            _log.warning("SIGMET fetch failed for hazard=%s: %s", h, resp)
+            _advisory_fetch_errors.add(1, {"endpoint": "airsigmet", "hazard": h})
             continue
         try:
             resp.raise_for_status()
             for item in resp.json():
                 item["_hazard_key"] = h
             results.extend(resp.json())
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("SIGMET parse/HTTP error for hazard=%s: %s", h, exc)
+            _advisory_fetch_errors.add(1, {"endpoint": "airsigmet", "hazard": h})
     return results
 
 
@@ -209,7 +227,12 @@ def _format_sigmet(item: dict) -> dict:
 
 async def _refresh_cache_if_needed() -> None:
     """Fetch fresh advisory data if the cache is stale, holding a lock so
-    concurrent callers within the same process only trigger one fetch."""
+    concurrent callers within the same process only trigger one fetch.
+
+    On failure the stale cache is kept (advisories degrade gracefully to
+    empty) and _cache_fetched_at is still advanced so a broken upstream
+    doesn't trigger a new fetch — and new timeout delays — on every request.
+    """
     global _cached_gairmets, _cached_sigmets, _cache_fetched_at
     if time.monotonic() - _cache_fetched_at < _ADVISORY_CACHE_TTL_S:
         return
@@ -218,14 +241,20 @@ async def _refresh_cache_if_needed() -> None:
         # while we were waiting.
         if time.monotonic() - _cache_fetched_at < _ADVISORY_CACHE_TTL_S:
             return
-        async with httpx.AsyncClient() as client:
-            gairmets, sigmets = await asyncio.gather(
-                _fetch_gairmets(client),
-                _fetch_sigmets(client),
-            )
-        _cached_gairmets = gairmets
-        _cached_sigmets = sigmets
-        _cache_fetched_at = time.monotonic()
+        try:
+            async with httpx.AsyncClient() as client:
+                gairmets, sigmets = await asyncio.gather(
+                    _fetch_gairmets(client),
+                    _fetch_sigmets(client),
+                )
+            _cached_gairmets = gairmets
+            _cached_sigmets = sigmets
+        except Exception as exc:
+            _log.error("Advisory cache refresh failed, keeping stale data: %s", exc)
+        finally:
+            # Always advance the timestamp so a broken upstream doesn't
+            # cause a thundering herd of timeout-delay fetches.
+            _cache_fetched_at = time.monotonic()
 
 
 async def get_advisories_for_point(lat: float, lon: float) -> list[dict]:
