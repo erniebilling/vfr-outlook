@@ -1180,7 +1180,7 @@
         "type": "tempo",
         "uid": "${DS_TEMPO}"
       },
-      "description": "Recent traces for airport_forecast, region_forecast, and trip_forecast spans. Click a trace ID to open the full trace.",
+      "description": "Recent end-to-end traces for API requests (Traefik → backend). Excludes health checks and ping. Click a trace ID to open the full trace.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1216,6 +1216,18 @@
                 "value": "ns"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "nested"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
           }
         ]
       },
@@ -1230,7 +1242,7 @@
         "frameIndex": 0,
         "showHeader": true
       },
-      "title": "Recent Traces \u2014 airport_forecast / region_forecast / trip_forecast",
+      "title": "Recent Traces \u2014 all endpoints",
       "type": "table",
       "targets": [
         {
@@ -1238,9 +1250,8 @@
             "type": "tempo",
             "uid": "${DS_TEMPO}"
           },
-          "queryType": "search",
-          "serviceName": "vfr-outlook-backend",
-          "spanName": "$span_name",
+          "queryType": "traceql",
+          "query": "{ name =~ \"GET /api.*\" }",
           "limit": 20,
           "refId": "A"
         }
@@ -1282,37 +1293,6 @@
         "regex": "",
         "sort": 0,
         "type": "query"
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": "airport_forecast",
-          "value": "airport_forecast"
-        },
-        "hide": 0,
-        "includeAll": false,
-        "label": "Span Name",
-        "multi": false,
-        "name": "span_name",
-        "options": [
-          {
-            "selected": true,
-            "text": "airport_forecast",
-            "value": "airport_forecast"
-          },
-          {
-            "selected": false,
-            "text": "region_forecast",
-            "value": "region_forecast"
-          },
-          {
-            "selected": false,
-            "text": "trip_forecast",
-            "value": "trip_forecast"
-          }
-        ],
-        "query": "airport_forecast,region_forecast,trip_forecast",
-        "type": "custom"
       }
     ]
   },
@@ -1324,6 +1304,6 @@
   "timezone": "browser",
   "title": "VFR Outlook \u2014 Service Health",
   "uid": "vfr-outlook-service-health",
-  "version": 4,
+  "version": 6,
   "weekStart": ""
 }
