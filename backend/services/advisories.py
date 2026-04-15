@@ -8,11 +8,24 @@ Hazards covered:
 """
 
 import asyncio
+import time
 import httpx
 from datetime import datetime, timezone
 from typing import Optional
 
 AWWS_BASE = "https://aviationweather.gov/api/data"
+
+# ---------------------------------------------------------------------------
+# In-process advisory cache — G-AIRMETs update at most every 3 hours, so
+# a 5-minute TTL means at worst one fetch per 5 minutes regardless of how
+# many airports are in a region/trip request.
+# ---------------------------------------------------------------------------
+_ADVISORY_CACHE_TTL_S = 300  # 5 minutes
+
+_cached_gairmets: list[dict] = []
+_cached_sigmets:  list[dict] = []
+_cache_fetched_at: float = 0.0   # epoch seconds; 0 means never fetched
+_cache_lock = asyncio.Lock()
 
 # G-AIRMET hazards we care about (TANGO product = turbulence/wind)
 _GAIRMET_HAZARDS = ["turb-hi", "turb-lo", "llws"]
@@ -194,16 +207,36 @@ def _format_sigmet(item: dict) -> dict:
     }
 
 
+async def _refresh_cache_if_needed() -> None:
+    """Fetch fresh advisory data if the cache is stale, holding a lock so
+    concurrent callers within the same process only trigger one fetch."""
+    global _cached_gairmets, _cached_sigmets, _cache_fetched_at
+    if time.monotonic() - _cache_fetched_at < _ADVISORY_CACHE_TTL_S:
+        return
+    async with _cache_lock:
+        # Re-check inside the lock — another coroutine may have refreshed
+        # while we were waiting.
+        if time.monotonic() - _cache_fetched_at < _ADVISORY_CACHE_TTL_S:
+            return
+        async with httpx.AsyncClient() as client:
+            gairmets, sigmets = await asyncio.gather(
+                _fetch_gairmets(client),
+                _fetch_sigmets(client),
+            )
+        _cached_gairmets = gairmets
+        _cached_sigmets = sigmets
+        _cache_fetched_at = time.monotonic()
+
+
 async def get_advisories_for_point(lat: float, lon: float) -> list[dict]:
     """
     Return a list of active AIRMET/SIGMET advisories whose polygon
-    contains the given lat/lon point.
+    contains the given lat/lon point.  Advisory data is fetched once and
+    cached for up to _ADVISORY_CACHE_TTL_S seconds.
     """
-    async with httpx.AsyncClient() as client:
-        gairmets, sigmets = await asyncio.gather(
-            _fetch_gairmets(client),
-            _fetch_sigmets(client),
-        )
+    await _refresh_cache_if_needed()
+    gairmets = _cached_gairmets
+    sigmets  = _cached_sigmets
 
     advisories = []
 
