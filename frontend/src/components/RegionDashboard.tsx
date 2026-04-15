@@ -1,12 +1,14 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { RegionResponse, AirportForecast, DayForecast, Advisory } from '../types/forecast'
 import { scoreBgClass, scoreLabel, formatDate } from '../lib/score'
 import ForecastTable from './ForecastTable'
 import RegionMap from './RegionMap'
 
-function WeatherTooltip({ day, icao }: { day: DayForecast; icao: string }) {
+function WeatherTooltip({ day, icao, x, y }: { day: DayForecast; icao: string; x: number; y: number }) {
   return (
-    <div className="absolute z-20 bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl text-xs text-left pointer-events-none">
+    <div className="fixed w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl text-xs text-left pointer-events-none"
+      style={{ left: x, top: y, transform: 'translate(-50%, -100%) translateY(-8px)', zIndex: 1000 }}
+    >
       <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between gap-2">
         <span className="font-mono font-bold text-blue-400">{icao}</span>
         <span className="text-gray-400">{formatDate(day.date)}</span>
@@ -98,17 +100,26 @@ function ScorePill({
 }: {
   score: number; day: DayForecast; icao: string; active: boolean
 }) {
-  const [hovered, setHovered] = useState(false)
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const pillRef = useRef<HTMLDivElement>(null)
+
+  function handleMouseEnter() {
+    if (pillRef.current) {
+      const r = pillRef.current.getBoundingClientRect()
+      setPos({ x: r.left + r.width / 2, y: r.top })
+    }
+  }
+
   return (
     <div
-      className="relative"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      ref={pillRef}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={() => setPos(null)}
     >
       <div className={`${scoreBgClass(score)} text-gray-900 text-xs font-bold text-center rounded py-1 px-0.5 min-w-0 cursor-default transition-all ${active ? 'ring-2 ring-white ring-offset-1 ring-offset-gray-900' : ''}`}>
         {score.toFixed(0)}
       </div>
-      {hovered && <WeatherTooltip day={day} icao={icao} />}
+      {pos && <WeatherTooltip day={day} icao={icao} x={pos.x} y={pos.y} />}
     </div>
   )
 }
