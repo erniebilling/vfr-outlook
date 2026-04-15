@@ -44,7 +44,7 @@ export default function SearchBar({ onSearch, loading }: Props) {
   }
 
   return (
-    <div className="relative w-full max-w-md">
+    <div className="relative w-full">
       <div className="flex gap-2">
         <input
           type="text"

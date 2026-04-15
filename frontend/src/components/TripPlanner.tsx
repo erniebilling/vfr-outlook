@@ -111,7 +111,7 @@ function DayScoreRow({
         </td>
         <td className="py-2 px-3 text-sm text-gray-400">
           <span className="font-mono text-orange-400">{ds.limiting_icao}</span>
-          <span className="text-gray-600 ml-1.5 text-xs">{ds.limiting_name}</span>
+          <span className="text-gray-600 ml-1.5 text-xs hidden sm:inline">{ds.limiting_name}</span>
         </td>
         <td className="py-2 pl-2 text-center">
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${confidenceBadge(ds.confidence)}`}>

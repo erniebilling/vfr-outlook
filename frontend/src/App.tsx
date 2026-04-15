@@ -19,22 +19,24 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
-      <header className="border-b border-gray-800 px-6 py-4">
+      <header className="border-b border-gray-800 px-4 sm:px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-xl font-bold tracking-tight">✈ VFR Outlook</h1>
             <p className="text-xs text-gray-500">14-day VFR probability forecast</p>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
             <button
               onClick={() => setUseNm(v => !v)}
-              className="text-xs px-3 py-1.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors text-gray-300"
+              className="text-xs px-3 py-1.5 rounded border border-gray-700 bg-gray-800 hover:bg-gray-700 transition-colors text-gray-300 shrink-0"
               title="Toggle distance units"
             >
               {useNm ? 'NM' : 'mi'}
             </button>
             {tab === 'region' && (
-              <SearchBar onSearch={setSelectedIcao} loading={isLoading} />
+              <div className="flex-1 min-w-0">
+                <SearchBar onSearch={setSelectedIcao} loading={isLoading} />
+              </div>
             )}
           </div>
         </div>
@@ -49,7 +51,7 @@ export default function App() {
                 : 'text-gray-500 hover:text-gray-300'
             }`}
           >
-            Regional Dashboard
+            Regional<span className="hidden sm:inline"> Dashboard</span>
           </button>
           <button
             onClick={() => setTab('trip')}
@@ -64,7 +66,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-6 py-8 space-y-6 min-h-screen">
+      <main className="max-w-7xl mx-auto px-3 py-4 sm:px-6 sm:py-8 space-y-6 min-h-screen">
         <LegendBar />
         <ScoringPanel />
 

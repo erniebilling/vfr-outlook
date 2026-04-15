@@ -6,7 +6,7 @@ import RegionMap from './RegionMap'
 
 function WeatherTooltip({ day, icao, x, y }: { day: DayForecast; icao: string; x: number; y: number }) {
   return (
-    <div className="fixed w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-xl text-xs text-left pointer-events-none"
+    <div className="fixed w-44 max-w-[90vw] bg-gray-800 border border-gray-600 rounded-lg shadow-xl text-xs text-left pointer-events-none"
       style={{ left: x, top: y, transform: 'translate(-50%, -100%) translateY(-8px)', zIndex: 1000 }}
     >
       <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between gap-2">

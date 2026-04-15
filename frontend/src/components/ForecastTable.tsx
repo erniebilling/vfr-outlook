@@ -210,7 +210,7 @@ export default function ForecastTable({ data }: Props) {
                 key={day.date}
                 className={`border-b border-gray-800 ${i === 0 ? 'bg-gray-800/50' : 'hover:bg-gray-800/30'} transition-colors`}
               >
-                <td className="py-2 pr-4 whitespace-nowrap">
+                <td className="py-2 pr-2 md:pr-4 whitespace-nowrap">
                   <div className="font-medium text-white">{formatDate(day.date)}</div>
                   {i === 0 && <div className="text-xs text-blue-400">Today</div>}
                 </td>

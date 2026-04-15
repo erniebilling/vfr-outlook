@@ -24,7 +24,6 @@ interface Props {
   routeLine?: LatLon[]           // draws a dashed line through these points
   selectedIcao?: string | null
   onSelect?: (icao: string) => void
-  height?: number
 }
 
 function buildPopup(airport: AirportForecast, dayIndex: number): string {
@@ -43,7 +42,7 @@ function buildPopup(airport: AirportForecast, dayIndex: number): string {
     ? `<div style="margin-top:6px;padding-top:6px;border-top:1px solid #374151;color:#fb923c;font-size:11px">${day.issues.map(i => `⚠ ${i}`).join('<br>')}</div>`
     : ''
   return `
-    <div style="min-width:180px;font-family:monospace;font-size:12px">
+    <div style="min-width:160px;max-width:min(240px,90vw);font-family:monospace;font-size:12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
         <strong style="color:#60a5fa;font-size:14px">${airport.icao}</strong>
         <span style="color:#9ca3af">${formatDate(day.date)}</span>
@@ -61,7 +60,7 @@ function buildPopup(airport: AirportForecast, dayIndex: number): string {
 }
 
 export default function AirportMap({
-  airports, dayIndex, fitBounds, routeLine, selectedIcao, onSelect, height = 400,
+  airports, dayIndex, fitBounds, routeLine, selectedIcao, onSelect,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -188,8 +187,7 @@ export default function AirportMap({
   return (
     <div
       ref={containerRef}
-      className="rounded-xl border border-gray-800"
-      style={{ height }}
+      className="rounded-xl border border-gray-800 h-48 sm:h-72 md:h-[400px]"
     />
   )
 }
