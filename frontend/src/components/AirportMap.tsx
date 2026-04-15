@@ -188,7 +188,7 @@ export default function AirportMap({
   return (
     <div
       ref={containerRef}
-      className="rounded-xl overflow-hidden border border-gray-800"
+      className="rounded-xl border border-gray-800"
       style={{ height }}
     />
   )
