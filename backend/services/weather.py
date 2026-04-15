@@ -5,6 +5,7 @@ Aggregates METAR (current), NOAA hourly (days 0-7), and Open-Meteo (days 0-16).
 
 import asyncio
 import logging
+import time
 import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -17,6 +18,16 @@ from otel import get_meter
 _log = logging.getLogger(__name__)
 
 _meter = get_meter("vfr-outlook.services.weather")
+
+# ---------------------------------------------------------------------------
+# Open-Meteo cache — keyed on (lat_2dp, lon_2dp), TTL 30 minutes.
+# Rounds coordinates to ~1 km grid so nearby airports share one fetch,
+# eliminating the per-airport burst that triggers 429s on region queries.
+# ---------------------------------------------------------------------------
+_OM_CACHE_TTL_S = 1800  # 30 minutes
+_om_cache: dict[tuple[float, float], tuple[float, Optional[dict]]] = {}
+# value: (fetched_at_monotonic, data)
+_om_cache_locks: dict[tuple[float, float], asyncio.Lock] = {}
 _forecast_requests = _meter.create_counter(
     "vfr.forecast.requests",
     description="Total number of single-airport forecast computations",
@@ -78,25 +89,42 @@ async def fetch_noaa_hourly(client: httpx.AsyncClient, lat: float, lon: float) -
 
 
 async def fetch_open_meteo(client: httpx.AsyncClient, lat: float, lon: float) -> Optional[dict]:
-    try:
-        resp = await client.get(
-            OPEN_METEO_BASE,
-            params={
-                "latitude": lat,
-                "longitude": lon,
-                "hourly": "precipitation_probability,windspeed_10m,windgusts_10m,winddirection_10m,cloudcover",
-                "forecast_days": 16,
-                "windspeed_unit": "kn",
-                "precipitation_unit": "inch",
-                "timezone": "America/Los_Angeles",
-            },
-            timeout=15,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as exc:
-        _log.warning("Open-Meteo fetch failed for %.4f,%.4f: %s", lat, lon, exc)
-        return None
+    key = (round(lat, 2), round(lon, 2))
+
+    fetched_at, cached = _om_cache.get(key, (0.0, None))
+    if time.monotonic() - fetched_at < _OM_CACHE_TTL_S:
+        return cached
+
+    if key not in _om_cache_locks:
+        _om_cache_locks[key] = asyncio.Lock()
+    async with _om_cache_locks[key]:
+        fetched_at, cached = _om_cache.get(key, (0.0, None))
+        if time.monotonic() - fetched_at < _OM_CACHE_TTL_S:
+            return cached
+
+        result: Optional[dict] = None
+        try:
+            resp = await client.get(
+                OPEN_METEO_BASE,
+                params={
+                    "latitude": key[0],
+                    "longitude": key[1],
+                    "hourly": "precipitation_probability,windspeed_10m,windgusts_10m,winddirection_10m,cloudcover",
+                    "forecast_days": 16,
+                    "windspeed_unit": "kn",
+                    "precipitation_unit": "inch",
+                    "timezone": "America/Los_Angeles",
+                },
+                timeout=15,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+        except Exception as exc:
+            _log.warning("Open-Meteo fetch failed for %.2f,%.2f: %s", key[0], key[1], exc)
+        finally:
+            _om_cache[key] = (time.monotonic(), result)
+
+    return _om_cache[key][1]
 
 
 def _parse_noaa_day(hourly_data: dict, day_offset: int) -> Optional[dict]:
