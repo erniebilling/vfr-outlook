@@ -1309,7 +1309,7 @@
             "type": "loki",
             "uid": "${DS_LOKI}"
           },
-          "expr": "{service_name=\"vfr-outlook-backend\"} |= `WARNING` or {service_name=\"vfr-outlook-backend\"} |= `ERROR`",
+          "expr": "{service_name=\"vfr-outlook-backend\"} |~ `WARNING|ERROR`",
           "refId": "A"
         }
       ]
