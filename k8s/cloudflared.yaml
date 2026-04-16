@@ -1,0 +1,78 @@
+---
+# Cloudflare Tunnel configuration
+# Routes vfr-outlook.broken-top.com → frontend (/) and backend (/api)
+#
+# Prerequisites:
+#   1. Create tunnel:  cloudflared tunnel create vfr-outlook
+#   2. Create DNS:     cloudflared tunnel route dns vfr-outlook vfr-outlook.broken-top.com
+#   3. Create secret:  kubectl create secret generic cloudflared-credentials \
+#                        --from-file=credentials.json=~/.cloudflared/8e102075-330c-4dab-b03d-3e955f050f10.json \
+#                        -n vfr-outlook
+#   4. Set TUNNEL_ID below (the UUID from step 1)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: vfr-outlook
+data:
+  config.yaml: |
+    tunnel: 8e102075-330c-4dab-b03d-3e955f050f10
+    credentials-file: /etc/cloudflared/credentials.json
+    ingress:
+      - hostname: vfr-outlook.broken-top.com
+        path: /api
+        service: http://vfr-backend.vfr-outlook.svc.cluster.local:8000
+      - hostname: vfr-outlook.broken-top.com
+        service: http://vfr-frontend.vfr-outlook.svc.cluster.local:80
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: vfr-outlook
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args:
+            - tunnel
+            - --config
+            - /etc/cloudflared/config.yaml
+            - run
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared/config.yaml
+              subPath: config.yaml
+            - name: credentials
+              mountPath: /etc/cloudflared/credentials.json
+              subPath: credentials.json
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: 2000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared-config
+        - name: credentials
+          secret:
+            secretName: cloudflared-credentials

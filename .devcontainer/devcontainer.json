@@ -10,12 +10,14 @@
 			"version": "latest",
 			"helm": "none",
 			"minikube": "none"
-		}
+		},
+		"ghcr.io/devcontainers-extra/features/cloudflared:1": {}
 	},
 
 	"mounts": [
 		"source=${localEnv:HOME}/.kube,target=/home/vscode/.kube,type=bind,consistency=cached",
-		"source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached"
+		"source=${localEnv:HOME}/.claude,target=/home/vscode/.claude,type=bind,consistency=cached",
+		"source=${localEnv:HOME}/.cloudflare,target=/home/vscode/.cloudflare,type=bind,consistency=cached"
 	],
 
 	"forwardPorts": [8000, 5173],
@@ -33,7 +35,8 @@
 				"ms-python.vscode-pylance",
 				"bradlc.vscode-tailwindcss",
 				"esbenp.prettier-vscode",
-				"dbaeumer.vscode-eslint"
+				"dbaeumer.vscode-eslint",
+				"anthropic.claude-code"
 			]
 		}
 	}

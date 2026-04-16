@@ -2,12 +2,14 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: vfr-outlook
+  namespace: vfr-outlook
   annotations:
     metallb.universe.tf/address-pool: pool
+    traefik.ingress.kubernetes.io/router.observability.tracing: "true"
 spec:
   ingressClassName: traefik
   rules:
-    - host: vfr.broken-top.com    # replace with your domain
+    - host: vfr.broken-top.com
       http:
         paths:
           - path: /api
@@ -24,38 +26,3 @@ spec:
                 name: vfr-frontend
                 port:
                   number: 80
----
-# MetalLB LoadBalancer for the frontend UI — gets a public IP from MetalLB.
-# Both services share the same IP via the allow-shared-ip annotation so a
-# single external address serves the UI (port 80) and the API (port 8000).
-apiVersion: v1
-kind: Service
-metadata:
-  name: vfr-frontend-lb
-  annotations:
-    metallb.universe.tf/address-pool: pool
-    metallb.universe.tf/allow-shared-ip: vfr-outlook
-spec:
-  type: LoadBalancer
-  selector:
-    app: vfr-frontend
-  ports:
-    - name: http
-      port: 80
-      targetPort: 80
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: vfr-backend-lb
-  annotations:
-    metallb.universe.tf/address-pool: pool
-    metallb.universe.tf/allow-shared-ip: vfr-outlook
-spec:
-  type: LoadBalancer
-  selector:
-    app: vfr-backend
-  ports:
-    - name: http
-      port: 8000
-      targetPort: 8000

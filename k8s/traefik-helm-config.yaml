@@ -1,0 +1,13 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    additionalArguments:
+      - "--tracing.otlp.http.endpoint=http://otel-collector.monitoring:4318/v1/traces"
+      - "--tracing.otlp.http.tls.insecureskipverify=true"
+      - "--tracing.samplerate=1.0"
+      - "--tracing.servicename=traefik"
+      - "--tracing.addinternals=true"

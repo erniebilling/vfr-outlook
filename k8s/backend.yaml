@@ -20,7 +20,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: CORS_ORIGINS
-              value: "https://www.vfr-outlook.broken-top.com"
+              value: "https://vfr-outlook.broken-top.com"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.monitoring:4317"
             - name: OTEL_SERVICE_NAME
