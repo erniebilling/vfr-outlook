@@ -93,6 +93,8 @@ interface Props {
   useNm: boolean
   minRwyFt: number
   onMinRwyFtChange: (ft: number) => void
+  hardSurface: boolean
+  onHardSurfaceChange: (v: boolean) => void
 }
 
 function ScorePill({
@@ -216,7 +218,7 @@ function DaySlider({
 }
 
 export default function RegionDashboard({
-  data, radius, onRadiusChange, maxAirports, onMaxAirportsChange, useNm, minRwyFt, onMinRwyFtChange,
+  data, radius, onRadiusChange, maxAirports, onMaxAirportsChange, useNm, minRwyFt, onMinRwyFtChange, hardSurface, onHardSurfaceChange,
 }: Props) {
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
   const [activeDayIndex, setActiveDayIndex] = useState(0)
@@ -273,6 +275,17 @@ export default function RegionDashboard({
               {ft === 0 ? 'Any' : `${(ft / 1000).toFixed(0)}k`}
             </button>
           ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-sm">Hard surface:</span>
+          <button
+            onClick={() => onHardSurfaceChange(!hardSurface)}
+            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${
+              hardSurface ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+            }`}
+          >
+            {hardSurface ? 'Yes' : 'Any'}
+          </button>
         </div>
         <span className="text-gray-600 text-sm">{data.airport_count} shown</span>
         <button

@@ -71,6 +71,7 @@ async def region_forecast(
     radius: int = Query(_DEFAULT_RADIUS, ge=25, le=300, description="Radius in miles"),
     max_airports: int = Query(_DEFAULT_MAX_AIRPORTS, ge=1, le=_HARD_MAX_AIRPORTS, description="Maximum number of airports to return (including base)"),
     min_rwy_ft: Optional[int] = Query(None, ge=0, description="Minimum runway length in feet"),
+    hard_surface: bool = Query(True, description="Only include airports with hard surface runways"),
 ):
     """
     Return 14-day forecasts for all airports within `radius` miles of `icao`.
@@ -99,6 +100,7 @@ async def region_forecast(
             max_results=10000,
             exclude_icao=icao,
             min_rwy_ft=min_rwy_ft,
+            hard_surface=hard_surface,
         )
         nearby = nearby_all[:max_airports - 1]
 
@@ -151,6 +153,7 @@ async def trip_forecast(
     corridor_width: int = Query(50, ge=10, le=150, description="Corridor half-width in miles"),
     max_airports: int = Query(20, ge=2, le=50),
     min_rwy_ft: Optional[int] = Query(None, ge=0),
+    hard_surface: bool = Query(True, description="Only include airports with hard surface runways"),
 ):
     """
     Return 14-day trip forecasts for airports along the corridor between origin and dest.
@@ -187,6 +190,7 @@ async def trip_forecast(
             width_miles=corridor_width,
             exclude_icaos=(origin, dest),
             min_rwy_ft=min_rwy_ft,
+            hard_surface=hard_surface,
         )
         # Evenly space corridor airports rather than taking the first N (which clusters near origin).
         # Include non-K airports (e.g. S39, 7S5) — weather stack uses lat/lon and handles

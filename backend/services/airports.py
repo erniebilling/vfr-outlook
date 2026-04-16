@@ -87,6 +87,7 @@ def airports_in_corridor(
     width_miles: float = 50.0,
     exclude_icaos: tuple[str, ...] = (),
     min_rwy_ft: Optional[int] = None,
+    hard_surface: bool = True,
 ) -> list[dict]:
     """
     Return airports within `width_miles` of the great-circle path between two points,
@@ -103,6 +104,8 @@ def airports_in_corridor(
             max_rwy = ap.get("max_rwy_ft")
             if max_rwy is None or max_rwy < min_rwy_ft:
                 continue
+        if hard_surface and not ap.get("has_hard_surface"):
+            continue
         dist = _point_to_segment_dist_miles(ap["lat"], ap["lon"], lat1, lon1, lat2, lon2)
         if dist <= width_miles:
             results.append({**ap, "cross_track_miles": round(dist, 1)})
@@ -137,6 +140,7 @@ def airports_within_radius(
     exclude_icao: Optional[str] = None,
     types: tuple[str, ...] = ("small_airport", "medium_airport", "large_airport"),
     min_rwy_ft: Optional[int] = None,
+    hard_surface: bool = True,
 ) -> list[dict]:
     """Return airports within radius_miles, sorted by distance, capped at max_results."""
     nearby = []
@@ -149,6 +153,8 @@ def airports_within_radius(
             max_rwy = ap.get("max_rwy_ft")
             if max_rwy is None or max_rwy < min_rwy_ft:
                 continue
+        if hard_surface and not ap.get("has_hard_surface"):
+            continue
         dist = _haversine_miles(lat, lon, ap["lat"], ap["lon"])
         if dist <= radius_miles:
             nearby.append({**ap, "distance_miles": round(dist, 1)})

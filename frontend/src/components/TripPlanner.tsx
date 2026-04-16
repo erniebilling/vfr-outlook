@@ -188,9 +188,11 @@ interface Props {
   useNm: boolean
   minRwyFt: number
   onMinRwyFtChange: (v: number) => void
+  hardSurface: boolean
+  onHardSurfaceChange: (v: boolean) => void
 }
 
-export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange }: Props) {
+export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange, hardSurface, onHardSurfaceChange }: Props) {
   const [origin, setOrigin] = useState<string | null>(null)
   const [dest, setDest] = useState<string | null>(null)
   const [corridorWidth, setCorridorWidth] = useState(50)
@@ -199,7 +201,7 @@ export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange }: Props
   const [selectedIcao, setSelectedIcao] = useState<string | null>(null)
 
   const { data, isLoading, isError, error } = useTrip(
-    origin, dest, corridorWidth, maxAirports, minRwyFt,
+    origin, dest, corridorWidth, maxAirports, minRwyFt, hardSurface,
   )
 
   const today = new Date().toISOString().slice(0, 10)
@@ -271,6 +273,18 @@ export default function TripPlanner({ useNm, minRwyFt, onMinRwyFtChange }: Props
               onChange={e => onMinRwyFtChange(Number(e.target.value))}
               className="w-20 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-white text-xs focus:outline-none focus:border-blue-500"
             />
+          </label>
+
+          <label className="flex items-center gap-2 text-gray-400">
+            <span className="text-xs">Hard surface</span>
+            <button
+              onClick={() => onHardSurfaceChange(!hardSurface)}
+              className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                hardSurface ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+              }`}
+            >
+              {hardSurface ? 'Yes' : 'Any'}
+            </button>
           </label>
         </div>
       </div>

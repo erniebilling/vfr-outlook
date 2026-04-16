@@ -15,7 +15,8 @@ export default function App() {
   const [maxAirports, setMaxAirports] = useState(20)
   const [useNm, setUseNm] = useState(true)
   const [minRwyFt, setMinRwyFt] = useState(2000)
-  const { data, isLoading, isError, error } = useRegion(selectedIcao, radius, maxAirports, minRwyFt)
+  const [hardSurface, setHardSurface] = useState(true)
+  const { data, isLoading, isError, error } = useRegion(selectedIcao, radius, maxAirports, minRwyFt, hardSurface)
 
   return (
     <div className="min-h-screen bg-gray-950 text-gray-100">
@@ -105,6 +106,8 @@ export default function App() {
                 useNm={useNm}
                 minRwyFt={minRwyFt}
                 onMinRwyFtChange={setMinRwyFt}
+                hardSurface={hardSurface}
+                onHardSurfaceChange={setHardSurface}
               />
             )}
           </>
@@ -115,6 +118,8 @@ export default function App() {
             useNm={useNm}
             minRwyFt={minRwyFt}
             onMinRwyFtChange={setMinRwyFt}
+            hardSurface={hardSurface}
+            onHardSurfaceChange={setHardSurface}
           />
         )}
       </main>
