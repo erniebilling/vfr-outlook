@@ -15,6 +15,6 @@ metadata:
     app.kubernetes.io/component: eventlistener
     app.kubernetes.io/part-of: tekton-ci
 spec:
-  serviceAccountName: tekton-pipeline-sa
+  serviceAccountName: tekton-triggers-sa
   triggers:
     - triggerRef: vfr-outlook-trigger
