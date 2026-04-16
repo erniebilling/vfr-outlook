@@ -137,7 +137,17 @@ async def fetch_metar(client: httpx.AsyncClient, icao: str) -> Optional[dict]:
         except Exception as exc:
             _error_counter.add(1, attrs)
             span.set_attribute("error", True)
-            _log.warning("METAR fetch failed for %s: %s", icao, exc)
+            try:
+                payload = resp.text
+            except Exception:
+                payload = "<unavailable>"
+            _log.warning(
+                "METAR fetch failed for %s: %s | status=%s payload=%r",
+                icao,
+                exc,
+                getattr(resp, "status_code", "?"),
+                payload,
+            )
             return None
 
 
