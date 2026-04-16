@@ -2,7 +2,7 @@ import asyncio
 import math
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from models.forecast import AirportForecast, RegionResponse, TripResponse, TripDayScore
 from services.weather import get_airport_forecast
 from services.airports import get_airport, search_airports as db_search, airports_within_radius, airports_in_corridor, _haversine_miles
@@ -67,6 +67,7 @@ async def airport_forecast(icao: str):
 
 @router.get("/region", response_model=RegionResponse)
 async def region_forecast(
+    request: Request,
     icao: str = Query(..., min_length=3, max_length=4, description="Center airport ICAO"),
     radius: int = Query(_DEFAULT_RADIUS, ge=25, le=300, description="Radius in miles"),
     max_airports: int = Query(_DEFAULT_MAX_AIRPORTS, ge=1, le=_HARD_MAX_AIRPORTS, description="Maximum number of airports to return (including base)"),
@@ -110,7 +111,9 @@ async def region_forecast(
             *[a for a in nearby],
         ]
 
-        # Fetch all forecasts concurrently
+        # Fetch all forecasts concurrently, sharing the app-level HTTP client
+        # so all airports reuse the same connection pool.
+        http_client = getattr(request.app.state, "http_client", None)
         tasks = [
             get_airport_forecast(
                 icao=a["icao"],
@@ -121,6 +124,7 @@ async def region_forecast(
                 distance_miles=a.get("distance_miles"),
                 runways=a.get("runways", []),
                 max_rwy_ft=a.get("max_rwy_ft"),
+                http_client=http_client,
             )
             for a in all_airports
         ]
@@ -148,6 +152,7 @@ _CONFIDENCE_ORDER = {"high": 0, "medium": 1, "low": 2}
 
 @router.get("/trip", response_model=TripResponse)
 async def trip_forecast(
+    request: Request,
     origin: str = Query(..., min_length=2, max_length=5),
     dest: str = Query(..., min_length=2, max_length=5),
     corridor_width: int = Query(50, ge=10, le=150, description="Corridor half-width in miles"),
@@ -218,7 +223,8 @@ async def trip_forecast(
             dest_info | {"cross_track_miles": 0.0},
         ]
 
-        # Fetch forecasts concurrently
+        # Fetch forecasts concurrently, sharing the app-level HTTP client.
+        http_client = getattr(request.app.state, "http_client", None)
         tasks = [
             get_airport_forecast(
                 icao=a["icao"],
@@ -229,6 +235,7 @@ async def trip_forecast(
                 distance_miles=a.get("cross_track_miles"),
                 runways=a.get("runways", []),
                 max_rwy_ft=a.get("max_rwy_ft"),
+                http_client=http_client,
             )
             for a in all_airports
         ]

@@ -21,6 +21,22 @@ _meter = get_meter("vfr-outlook.services.weather")
 _tracer = get_tracer("vfr-outlook.services.weather")
 
 # ---------------------------------------------------------------------------
+# METAR cache — keyed on ICAO, TTL 10 minutes.
+# METARs update roughly once an hour; 10 min keeps data fresh while
+# collapsing the fan-out burst from region/trip queries.
+# ---------------------------------------------------------------------------
+_METAR_CACHE_TTL_S = 600  # 10 minutes
+_metar_cache: dict[str, tuple[float, Optional[dict]]] = {}
+# value: (fetched_at_monotonic, data)
+_metar_cache_locks: dict[str, asyncio.Lock] = {}
+
+# Semaphore: at most 5 METAR fetches in-flight at once across the process.
+# Converts a 50-airport fan-out into ~10 serial batches instead of a
+# simultaneous 50-request burst that triggers 429s on aviationweather.gov.
+_METAR_CONCURRENCY = 5
+_metar_semaphore = asyncio.Semaphore(_METAR_CONCURRENCY)
+
+# ---------------------------------------------------------------------------
 # Open-Meteo cache — keyed on (lat_2dp, lon_2dp), TTL 30 minutes.
 # Rounds coordinates to ~1 km grid so nearby airports share one fetch,
 # eliminating the per-airport burst that triggers 429s on region queries.
@@ -72,15 +88,15 @@ _error_counter = _meter.create_counter(
     unit="1",
 )
 
-# Open-Meteo cache hit / miss counters
+# Cache hit / miss counters (service label distinguishes metar vs open_meteo)
 _cache_hit_counter = _meter.create_counter(
     "vfr.cache.hit",
-    description="Open-Meteo in-process cache hits",
+    description="In-process cache hits (metar, open_meteo)",
     unit="1",
 )
 _cache_miss_counter = _meter.create_counter(
     "vfr.cache.miss",
-    description="Open-Meteo in-process cache misses",
+    description="In-process cache misses (metar, open_meteo)",
     unit="1",
 )
 
@@ -108,47 +124,71 @@ def _confidence(day_offset: int) -> str:
 
 
 async def fetch_metar(client: httpx.AsyncClient, icao: str) -> Optional[dict]:
-    t0 = time.monotonic()
     attrs = {"service": "metar", "icao": icao}
-    with _tracer.start_as_current_span("weather.fetch_metar") as span:
-        span.set_attribute("airport.icao", icao)
-        span.set_attribute("external.service", "aviation_weather")
-        try:
-            resp = await client.get(
-                f"{AVIATION_WEATHER_BASE}/metar",
-                params={"ids": icao, "format": "json", "taf": "false", "hours": "2"},
-                timeout=10,
-            )
-            span.set_attribute("http.status_code", resp.status_code)
-            if resp.status_code == 429:
-                _rate_limit_counter.add(1, attrs)
-                _log.warning("METAR rate-limited (429) for %s", icao)
-                return None
-            resp.raise_for_status()
-            data = resp.json()
-            _external_call_duration.record((time.monotonic() - t0) * 1000, attrs)
-            return data[0] if data else None
-        except httpx.TimeoutException as exc:
-            _timeout_counter.add(1, attrs)
-            span.set_attribute("error", True)
-            span.set_attribute("error.type", "timeout")
-            _log.warning("METAR timeout for %s: %s", icao, exc)
-            return None
-        except Exception as exc:
-            _error_counter.add(1, attrs)
-            span.set_attribute("error", True)
-            try:
-                payload = resp.text
-            except Exception:
-                payload = "<unavailable>"
-            _log.warning(
-                "METAR fetch failed for %s: %s | status=%s payload=%r",
-                icao,
-                exc,
-                getattr(resp, "status_code", "?"),
-                payload,
-            )
-            return None
+
+    # ── Cache check (outside lock for fast path) ─────────────────────────────
+    fetched_at, cached = _metar_cache.get(icao, (0.0, None))
+    if time.monotonic() - fetched_at < _METAR_CACHE_TTL_S:
+        _cache_hit_counter.add(1, attrs)
+        return cached
+
+    if icao not in _metar_cache_locks:
+        _metar_cache_locks[icao] = asyncio.Lock()
+    async with _metar_cache_locks[icao]:
+        # Re-check inside lock — another coroutine may have just populated it.
+        fetched_at, cached = _metar_cache.get(icao, (0.0, None))
+        if time.monotonic() - fetched_at < _METAR_CACHE_TTL_S:
+            _cache_hit_counter.add(1, attrs)
+            return cached
+
+        _cache_miss_counter.add(1, attrs)
+
+        # ── Semaphore: cap concurrent outbound METAR requests ────────────────
+        async with _metar_semaphore:
+            t0 = time.monotonic()
+            result: Optional[dict] = None
+            with _tracer.start_as_current_span("weather.fetch_metar") as span:
+                span.set_attribute("airport.icao", icao)
+                span.set_attribute("cache.hit", False)
+                span.set_attribute("external.service", "aviation_weather")
+                try:
+                    resp = await client.get(
+                        f"{AVIATION_WEATHER_BASE}/metar",
+                        params={"ids": icao, "format": "json", "taf": "false", "hours": "2"},
+                        timeout=10,
+                    )
+                    span.set_attribute("http.status_code", resp.status_code)
+                    if resp.status_code == 429:
+                        _rate_limit_counter.add(1, attrs)
+                        _log.warning("METAR rate-limited (429) for %s", icao)
+                    else:
+                        resp.raise_for_status()
+                        data = resp.json()
+                        _external_call_duration.record((time.monotonic() - t0) * 1000, attrs)
+                        result = data[0] if data else None
+                except httpx.TimeoutException as exc:
+                    _timeout_counter.add(1, attrs)
+                    span.set_attribute("error", True)
+                    span.set_attribute("error.type", "timeout")
+                    _log.warning("METAR timeout for %s: %s", icao, exc)
+                except Exception as exc:
+                    _error_counter.add(1, attrs)
+                    span.set_attribute("error", True)
+                    try:
+                        payload = resp.text
+                    except Exception:
+                        payload = "<unavailable>"
+                    _log.warning(
+                        "METAR fetch failed for %s: %s | status=%s payload=%r",
+                        icao,
+                        exc,
+                        getattr(resp, "status_code", "?"),
+                        payload,
+                    )
+                finally:
+                    _metar_cache[icao] = (time.monotonic(), result)
+
+    return _metar_cache[icao][1]
 
 
 async def fetch_noaa_hourly(client: httpx.AsyncClient, lat: float, lon: float) -> Optional[dict]:
@@ -520,19 +560,30 @@ async def get_airport_forecast(
     distance_miles: Optional[float] = None,
     runways: Optional[list[dict]] = None,
     max_rwy_ft: Optional[int] = None,
+    http_client: Optional[httpx.AsyncClient] = None,
 ) -> AirportForecast:
-    """Fetch all weather data for one airport and return a complete AirportForecast."""
+    """Fetch all weather data for one airport and return a complete AirportForecast.
+
+    Pass ``http_client`` to reuse a shared connection pool across a fan-out
+    (region / trip queries).  When omitted a short-lived client is created,
+    which is fine for single-airport requests.
+    """
     import time
     t0 = time.monotonic()
     _forecast_requests.add(1, {"icao": icao})
     _inflight_airports.add(1)
     try:
-        async with httpx.AsyncClient() as client:
+        async def _fetch(client: httpx.AsyncClient) -> tuple:
             metar_task = fetch_metar(client, icao)
             noaa_task = fetch_noaa_hourly(client, lat, lon)
             om_task = fetch_open_meteo(client, lat, lon)
+            return await asyncio.gather(metar_task, noaa_task, om_task)
 
-            metar, noaa, om = await asyncio.gather(metar_task, noaa_task, om_task)
+        if http_client is not None:
+            metar, noaa, om = await _fetch(http_client)
+        else:
+            async with httpx.AsyncClient() as client:
+                metar, noaa, om = await _fetch(client)
     finally:
         _inflight_airports.add(-1)
 
