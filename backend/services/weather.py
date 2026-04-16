@@ -13,11 +13,12 @@ from typing import Optional
 from models.forecast import DayForecast, AirportForecast, Advisory, Runway
 from services.scorer import compute_vfr_score
 from services.advisories import get_advisories_for_point
-from otel import get_meter
+from otel import get_meter, get_tracer
 
 _log = logging.getLogger(__name__)
 
 _meter = get_meter("vfr-outlook.services.weather")
+_tracer = get_tracer("vfr-outlook.services.weather")
 
 # ---------------------------------------------------------------------------
 # Open-Meteo cache — keyed on (lat_2dp, lon_2dp), TTL 30 minutes.
@@ -28,6 +29,8 @@ _OM_CACHE_TTL_S = 1800  # 30 minutes
 _om_cache: dict[tuple[float, float], tuple[float, Optional[dict]]] = {}
 # value: (fetched_at_monotonic, data)
 _om_cache_locks: dict[tuple[float, float], asyncio.Lock] = {}
+
+# ── Existing metrics ─────────────────────────────────────────────────────────
 _forecast_requests = _meter.create_counter(
     "vfr.forecast.requests",
     description="Total number of single-airport forecast computations",
@@ -37,6 +40,55 @@ _forecast_duration = _meter.create_histogram(
     "vfr.forecast.duration",
     description="Time to compute a single-airport forecast",
     unit="ms",
+)
+
+# ── New stress-test / bottleneck metrics ─────────────────────────────────────
+
+# Per-external-call duration histograms (service = metar | noaa_points | noaa_forecast | open_meteo)
+_external_call_duration = _meter.create_histogram(
+    "vfr.external.duration",
+    description="Latency of individual outbound weather API calls",
+    unit="ms",
+)
+
+# Rate-limit (HTTP 429) events per external service
+_rate_limit_counter = _meter.create_counter(
+    "vfr.external.rate_limit",
+    description="HTTP 429 responses received from external weather APIs",
+    unit="1",
+)
+
+# Timeout events per external service
+_timeout_counter = _meter.create_counter(
+    "vfr.external.timeout",
+    description="Timeout errors on external weather API calls",
+    unit="1",
+)
+
+# Other (non-429, non-timeout) errors per external service
+_error_counter = _meter.create_counter(
+    "vfr.external.error",
+    description="Non-timeout, non-429 errors on external weather API calls",
+    unit="1",
+)
+
+# Open-Meteo cache hit / miss counters
+_cache_hit_counter = _meter.create_counter(
+    "vfr.cache.hit",
+    description="Open-Meteo in-process cache hits",
+    unit="1",
+)
+_cache_miss_counter = _meter.create_counter(
+    "vfr.cache.miss",
+    description="Open-Meteo in-process cache misses",
+    unit="1",
+)
+
+# Fan-out depth: how many airport forecasts are in-flight concurrently
+_inflight_airports = _meter.create_up_down_counter(
+    "vfr.region.inflight_airports",
+    description="Number of airport forecasts currently being fetched (fan-out depth)",
+    unit="1",
 )
 
 
@@ -56,43 +108,135 @@ def _confidence(day_offset: int) -> str:
 
 
 async def fetch_metar(client: httpx.AsyncClient, icao: str) -> Optional[dict]:
-    try:
-        resp = await client.get(
-            f"{AVIATION_WEATHER_BASE}/metar",
-            params={"ids": icao, "format": "json", "taf": "false", "hours": "2"},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data[0] if data else None
-    except Exception as exc:
-        _log.warning("METAR fetch failed for %s: %s", icao, exc)
-        return None
+    t0 = time.monotonic()
+    attrs = {"service": "metar", "icao": icao}
+    with _tracer.start_as_current_span("weather.fetch_metar") as span:
+        span.set_attribute("airport.icao", icao)
+        span.set_attribute("external.service", "aviation_weather")
+        try:
+            resp = await client.get(
+                f"{AVIATION_WEATHER_BASE}/metar",
+                params={"ids": icao, "format": "json", "taf": "false", "hours": "2"},
+                timeout=10,
+            )
+            span.set_attribute("http.status_code", resp.status_code)
+            if resp.status_code == 429:
+                _rate_limit_counter.add(1, attrs)
+                _log.warning("METAR rate-limited (429) for %s", icao)
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+            _external_call_duration.record((time.monotonic() - t0) * 1000, attrs)
+            return data[0] if data else None
+        except httpx.TimeoutException as exc:
+            _timeout_counter.add(1, attrs)
+            span.set_attribute("error", True)
+            span.set_attribute("error.type", "timeout")
+            _log.warning("METAR timeout for %s: %s", icao, exc)
+            return None
+        except Exception as exc:
+            _error_counter.add(1, attrs)
+            span.set_attribute("error", True)
+            _log.warning("METAR fetch failed for %s: %s", icao, exc)
+            return None
 
 
 async def fetch_noaa_hourly(client: httpx.AsyncClient, lat: float, lon: float) -> Optional[dict]:
-    try:
-        points_resp = await client.get(
-            f"{NOAA_POINTS_BASE}/{lat:.4f},{lon:.4f}",
-            headers=NOAA_HEADERS,
-            timeout=10,
-        )
-        points_resp.raise_for_status()
-        forecast_url = points_resp.json()["properties"]["forecastHourly"]
+    coord_attrs = {"service": "noaa_points", "icao": f"{lat:.2f},{lon:.2f}"}
 
-        hourly_resp = await client.get(forecast_url, headers=NOAA_HEADERS, timeout=15)
-        hourly_resp.raise_for_status()
-        return hourly_resp.json()
-    except Exception as exc:
-        _log.warning("NOAA hourly fetch failed for %.4f,%.4f: %s", lat, lon, exc)
-        return None
+    with _tracer.start_as_current_span("weather.fetch_noaa_hourly") as outer_span:
+        outer_span.set_attribute("airport.lat", lat)
+        outer_span.set_attribute("airport.lon", lon)
+        outer_span.set_attribute("external.service", "noaa")
+
+        # ── Step 1: points lookup ────────────────────────────────────────────
+        t0 = time.monotonic()
+        with _tracer.start_as_current_span("weather.noaa_points_lookup") as span1:
+            span1.set_attribute("airport.lat", lat)
+            span1.set_attribute("airport.lon", lon)
+            try:
+                points_resp = await client.get(
+                    f"{NOAA_POINTS_BASE}/{lat:.4f},{lon:.4f}",
+                    headers=NOAA_HEADERS,
+                    timeout=10,
+                )
+                span1.set_attribute("http.status_code", points_resp.status_code)
+                if points_resp.status_code == 429:
+                    _rate_limit_counter.add(1, coord_attrs)
+                    _log.warning("NOAA points rate-limited (429) for %.4f,%.4f", lat, lon)
+                    return None
+                points_resp.raise_for_status()
+                forecast_url = points_resp.json()["properties"]["forecastHourly"]
+                _external_call_duration.record(
+                    (time.monotonic() - t0) * 1000,
+                    {"service": "noaa_points", "icao": f"{lat:.2f},{lon:.2f}"},
+                )
+            except httpx.TimeoutException as exc:
+                _timeout_counter.add(1, coord_attrs)
+                span1.set_attribute("error", True)
+                span1.set_attribute("error.type", "timeout")
+                _log.warning("NOAA points timeout for %.4f,%.4f: %s", lat, lon, exc)
+                return None
+            except httpx.HTTPStatusError as exc:
+                _error_counter.add(1, coord_attrs)
+                span1.set_attribute("error", True)
+                outer_span.set_attribute("error", True)
+                _log.warning(
+                    "NOAA hourly fetch failed for %.4f,%.4f: HTTP %d",
+                    lat, lon, exc.response.status_code,
+                )
+                return None
+            except Exception as exc:
+                _error_counter.add(1, coord_attrs)
+                span1.set_attribute("error", True)
+                _log.warning("NOAA hourly fetch failed for %.4f,%.4f: %s", lat, lon, exc)
+                return None
+
+        # ── Step 2: hourly forecast fetch ────────────────────────────────────
+        t1 = time.monotonic()
+        forecast_attrs = {"service": "noaa_forecast", "icao": f"{lat:.2f},{lon:.2f}"}
+        with _tracer.start_as_current_span("weather.noaa_forecast_fetch") as span2:
+            span2.set_attribute("forecast_url", forecast_url)
+            try:
+                hourly_resp = await client.get(forecast_url, headers=NOAA_HEADERS, timeout=15)
+                span2.set_attribute("http.status_code", hourly_resp.status_code)
+                if hourly_resp.status_code == 429:
+                    _rate_limit_counter.add(1, forecast_attrs)
+                    _log.warning("NOAA forecast rate-limited (429) for %.4f,%.4f", lat, lon)
+                    return None
+                hourly_resp.raise_for_status()
+                _external_call_duration.record(
+                    (time.monotonic() - t1) * 1000, forecast_attrs
+                )
+                return hourly_resp.json()
+            except httpx.TimeoutException as exc:
+                _timeout_counter.add(1, forecast_attrs)
+                span2.set_attribute("error", True)
+                span2.set_attribute("error.type", "timeout")
+                _log.warning("NOAA forecast timeout for %.4f,%.4f: %s", lat, lon, exc)
+                return None
+            except httpx.HTTPStatusError as exc:
+                _error_counter.add(1, forecast_attrs)
+                span2.set_attribute("error", True)
+                _log.warning(
+                    "NOAA hourly fetch failed for %.4f,%.4f: HTTP %d",
+                    lat, lon, exc.response.status_code,
+                )
+                return None
+            except Exception as exc:
+                _error_counter.add(1, forecast_attrs)
+                span2.set_attribute("error", True)
+                _log.warning("NOAA hourly fetch failed for %.4f,%.4f: %s", lat, lon, exc)
+                return None
 
 
 async def fetch_open_meteo(client: httpx.AsyncClient, lat: float, lon: float) -> Optional[dict]:
     key = (round(lat, 2), round(lon, 2))
+    attrs = {"service": "open_meteo", "icao": f"{key[0]},{key[1]}"}
 
     fetched_at, cached = _om_cache.get(key, (0.0, None))
     if time.monotonic() - fetched_at < _OM_CACHE_TTL_S:
+        _cache_hit_counter.add(1, attrs)
         return cached
 
     if key not in _om_cache_locks:
@@ -100,29 +244,50 @@ async def fetch_open_meteo(client: httpx.AsyncClient, lat: float, lon: float) ->
     async with _om_cache_locks[key]:
         fetched_at, cached = _om_cache.get(key, (0.0, None))
         if time.monotonic() - fetched_at < _OM_CACHE_TTL_S:
+            _cache_hit_counter.add(1, attrs)
             return cached
 
+        _cache_miss_counter.add(1, attrs)
         result: Optional[dict] = None
-        try:
-            resp = await client.get(
-                OPEN_METEO_BASE,
-                params={
-                    "latitude": key[0],
-                    "longitude": key[1],
-                    "hourly": "precipitation_probability,windspeed_10m,windgusts_10m,winddirection_10m,cloudcover",
-                    "forecast_days": 16,
-                    "windspeed_unit": "kn",
-                    "precipitation_unit": "inch",
-                    "timezone": "America/Los_Angeles",
-                },
-                timeout=15,
-            )
-            resp.raise_for_status()
-            result = resp.json()
-        except Exception as exc:
-            _log.warning("Open-Meteo fetch failed for %.2f,%.2f: %s", key[0], key[1], exc)
-        finally:
-            _om_cache[key] = (time.monotonic(), result)
+        t0 = time.monotonic()
+        with _tracer.start_as_current_span("weather.fetch_open_meteo") as span:
+            span.set_attribute("cache.hit", False)
+            span.set_attribute("airport.lat", key[0])
+            span.set_attribute("airport.lon", key[1])
+            span.set_attribute("external.service", "open_meteo")
+            try:
+                resp = await client.get(
+                    OPEN_METEO_BASE,
+                    params={
+                        "latitude": key[0],
+                        "longitude": key[1],
+                        "hourly": "precipitation_probability,windspeed_10m,windgusts_10m,winddirection_10m,cloudcover",
+                        "forecast_days": 16,
+                        "windspeed_unit": "kn",
+                        "precipitation_unit": "inch",
+                        "timezone": "America/Los_Angeles",
+                    },
+                    timeout=15,
+                )
+                span.set_attribute("http.status_code", resp.status_code)
+                if resp.status_code == 429:
+                    _rate_limit_counter.add(1, attrs)
+                    _log.warning("Open-Meteo rate-limited (429) for %.2f,%.2f", key[0], key[1])
+                else:
+                    resp.raise_for_status()
+                    result = resp.json()
+                    _external_call_duration.record((time.monotonic() - t0) * 1000, attrs)
+            except httpx.TimeoutException as exc:
+                _timeout_counter.add(1, attrs)
+                span.set_attribute("error", True)
+                span.set_attribute("error.type", "timeout")
+                _log.warning("Open-Meteo timeout for %.2f,%.2f: %s", key[0], key[1], exc)
+            except Exception as exc:
+                _error_counter.add(1, attrs)
+                span.set_attribute("error", True)
+                _log.warning("Open-Meteo fetch failed for %.2f,%.2f: %s", key[0], key[1], exc)
+            finally:
+                _om_cache[key] = (time.monotonic(), result)
 
     return _om_cache[key][1]
 
@@ -350,12 +515,16 @@ async def get_airport_forecast(
     import time
     t0 = time.monotonic()
     _forecast_requests.add(1, {"icao": icao})
-    async with httpx.AsyncClient() as client:
-        metar_task = fetch_metar(client, icao)
-        noaa_task = fetch_noaa_hourly(client, lat, lon)
-        om_task = fetch_open_meteo(client, lat, lon)
+    _inflight_airports.add(1)
+    try:
+        async with httpx.AsyncClient() as client:
+            metar_task = fetch_metar(client, icao)
+            noaa_task = fetch_noaa_hourly(client, lat, lon)
+            om_task = fetch_open_meteo(client, lat, lon)
 
-        metar, noaa, om = await asyncio.gather(metar_task, noaa_task, om_task)
+            metar, noaa, om = await asyncio.gather(metar_task, noaa_task, om_task)
+    finally:
+        _inflight_airports.add(-1)
 
     # Current conditions from METAR
     current_metar_str = metar.get("rawOb") if metar else None

@@ -1,0 +1,79 @@
+{
+  "comment": "Test airports for VFR Outlook stress tests. Grouped by density profile.",
+
+  "baseline": [
+    {"icao": "KPDX", "name": "Portland International", "density": "medium",
+     "note": "Mid-size hub, reliable METAR/NOAA coverage"}
+  ],
+
+  "dense": [
+    {"icao": "KSQL", "name": "San Carlos Airport", "density": "high",
+     "note": "Bay Area — 20+ public airports within 50 miles"},
+    {"icao": "KRHV", "name": "Reid-Hillview", "density": "high",
+     "note": "South Bay — overlapping airspace with KSQL"},
+    {"icao": "KBUR", "name": "Hollywood Burbank", "density": "high",
+     "note": "LA basin — maximum airport density in CONUS"}
+  ],
+
+  "sparse": [
+    {"icao": "KBDN", "name": "Bend Municipal", "density": "low",
+     "note": "Eastern Oregon — few airports within 100 miles"},
+    {"icao": "KLMT", "name": "Klamath Falls", "density": "low",
+     "note": "Rural Oregon/California border — minimal neighbors"}
+  ],
+
+  "trips": [
+    {
+      "id": "pnw_long",
+      "origin": "KSEA",
+      "dest": "KDEN",
+      "corridor_width": 75,
+      "note": "~1000 mi Seattle→Denver, crosses Rockies, maximum corridor airports"
+    },
+    {
+      "id": "bay_to_la",
+      "origin": "KSJC",
+      "dest": "KLAX",
+      "corridor_width": 50,
+      "note": "~340 mi Bay Area→LA, coastal corridor, dense intermediate airports"
+    },
+    {
+      "id": "pnw_short",
+      "origin": "KPDX",
+      "dest": "KSEA",
+      "corridor_width": 30,
+      "note": "~150 mi Portland→Seattle, I-5 corridor, moderate density"
+    }
+  ],
+
+  "region_scenarios": [
+    {
+      "id": "dense_large",
+      "icao": "KSQL",
+      "radius": 100,
+      "max_airports": 50,
+      "note": "Maximum fan-out: Bay Area at full radius and cap"
+    },
+    {
+      "id": "dense_small",
+      "icao": "KSQL",
+      "radius": 40,
+      "max_airports": 20,
+      "note": "Dense area, moderate radius — typical production query"
+    },
+    {
+      "id": "sparse_large",
+      "icao": "KBDN",
+      "radius": 150,
+      "max_airports": 20,
+      "note": "Rural area at wide radius — few external calls, tests latency floor"
+    },
+    {
+      "id": "la_max",
+      "icao": "KBUR",
+      "radius": 75,
+      "max_airports": 50,
+      "note": "LA basin max — highest possible outbound call density"
+    }
+  ]
+}

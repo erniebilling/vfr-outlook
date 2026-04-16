@@ -1,0 +1,3 @@
+# Stress test dependencies — install separately from the backend
+# pip install -r tests/requirements-stress.txt
+locust>=2.24.0
