@@ -89,8 +89,9 @@ async def region_forecast(
             span.set_attribute("error", True)
             raise HTTPException(status_code=404, detail=f"Airport '{icao}' not found.")
 
-        # Find nearby airports. Filter to K-prefix ICAO (US public airports with aviation wx data).
-        # No max_results cap here — let the radius do the filtering, then cap after K-prefix filter.
+        # Find nearby airports. No max_results cap here — let the radius do the filtering,
+        # then cap after. We intentionally include non-K airports (e.g. S39, 7S5) because
+        # the weather stack uses lat/lon for forecasts and handles missing METARs gracefully.
         nearby_all = airports_within_radius(
             lat=base["lat"],
             lon=base["lon"],
@@ -99,7 +100,7 @@ async def region_forecast(
             exclude_icao=icao,
             min_rwy_ft=min_rwy_ft,
         )
-        nearby = [a for a in nearby_all if a["icao"].startswith("K")][:max_airports - 1]
+        nearby = nearby_all[:max_airports - 1]
 
         # Build list: base first, then nearby
         all_airports = [
@@ -187,24 +188,25 @@ async def trip_forecast(
             exclude_icaos=(origin, dest),
             min_rwy_ft=min_rwy_ft,
         )
-        # Keep K-prefix public airports with weather data, then evenly space
-        # along the corridor rather than taking the first N (which clusters near origin).
-        k_airports_all = [a for a in corridor if a["icao"].startswith("K")]
+        # Evenly space corridor airports rather than taking the first N (which clusters near origin).
+        # Include non-K airports (e.g. S39, 7S5) — weather stack uses lat/lon and handles
+        # missing METARs gracefully.
+        corridor_airports_all = corridor
         n_slots = max_airports - 2  # slots between origin and dest
-        if len(k_airports_all) <= n_slots:
-            k_airports = k_airports_all
+        if len(corridor_airports_all) <= n_slots:
+            k_airports = corridor_airports_all
         else:
             # airports_in_corridor returns them sorted by along-track t ∈ [0,1].
             # Assign each airport a t value by its index position, then pick one
             # per evenly-spaced bucket.
-            total = len(k_airports_all)
+            total = len(corridor_airports_all)
             bucket_size = total / n_slots
             k_airports = []
             for slot in range(n_slots):
                 # target index = midpoint of this bucket
                 target = (slot + 0.5) * bucket_size
                 idx = min(round(target), total - 1)
-                k_airports.append(k_airports_all[idx])
+                k_airports.append(corridor_airports_all[idx])
 
         all_airports = [
             orig_info | {"cross_track_miles": 0.0},
