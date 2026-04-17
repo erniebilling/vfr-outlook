@@ -39,6 +39,7 @@ export interface Runway {
 
 export interface AirportForecast {
   icao: string
+  faa: string
   name: string
   lat: number
   lon: number

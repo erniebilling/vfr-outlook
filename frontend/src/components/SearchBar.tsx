@@ -2,6 +2,7 @@ import { useState, useRef } from 'react'
 
 interface Suggestion {
   icao: string
+  faa: string
   name: string
 }
 
@@ -51,9 +52,9 @@ export default function SearchBar({ onSearch, loading }: Props) {
           value={input}
           onChange={e => handleChange(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSubmit()}
-          placeholder="Enter ICAO code (e.g. KBDN)"
+          placeholder="Enter ICAO or FAA code (e.g. KBDN or S39)"
           className="flex-1 bg-gray-800 border border-gray-600 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 uppercase"
-          maxLength={4}
+          maxLength={5}
           spellCheck={false}
         />
         <button
@@ -73,7 +74,12 @@ export default function SearchBar({ onSearch, loading }: Props) {
               onClick={() => handleSubmit(s.icao)}
               className="px-4 py-2 cursor-pointer hover:bg-gray-700 flex gap-3"
             >
-              <span className="font-mono font-bold text-blue-400">{s.icao}</span>
+              <span className="font-mono font-bold text-blue-400">
+                {s.icao}
+                {s.faa && s.faa !== s.icao && (
+                  <span className="text-gray-400 font-normal"> / {s.faa}</span>
+                )}
+              </span>
               <span className="text-gray-300 text-sm truncate">{s.name}</span>
             </li>
           ))}

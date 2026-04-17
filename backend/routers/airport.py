@@ -53,7 +53,7 @@ async def airport_forecast(icao: str):
         span.set_attribute("airport.lon", info["lon"])
 
         result = await get_airport_forecast(
-            icao=icao,
+            icao=info["icao"],
             name=info["name"],
             lat=info["lat"],
             lon=info["lon"],
@@ -62,6 +62,8 @@ async def airport_forecast(icao: str):
             runways=info.get("runways", []),
             max_rwy_ft=info.get("max_rwy_ft"),
             has_metar=info.get("has_metar", True),
+            faa=info.get("faa"),
+            metar_id=info.get("metar_id"),
         )
         return result
 
@@ -126,6 +128,8 @@ async def region_forecast(
                 runways=a.get("runways", []),
                 max_rwy_ft=a.get("max_rwy_ft"),
                 has_metar=a.get("has_metar", True),
+                faa=a.get("faa"),
+                metar_id=a.get("metar_id"),
                 http_client=http_client,
             )
             for a in all_airports
@@ -238,6 +242,8 @@ async def trip_forecast(
                 runways=a.get("runways", []),
                 max_rwy_ft=a.get("max_rwy_ft"),
                 has_metar=a.get("has_metar", True),
+                faa=a.get("faa"),
+                metar_id=a.get("metar_id"),
                 http_client=http_client,
             )
             for a in all_airports
@@ -288,9 +294,9 @@ async def trip_forecast(
 
 @router.get("/airports/search")
 async def search_airports(q: str = Query(..., min_length=2)):
-    """Full-text search over OurAirports database. Returns ICAO + name."""
+    """Full-text search over OurAirports database. Returns ICAO, FAA ident, and name."""
     results = db_search(q, limit=10)
-    return [{"icao": a["icao"], "name": a["name"]} for a in results]
+    return [{"icao": a["icao"], "faa": a.get("faa", a["icao"]), "name": a["name"]} for a in results]
 
 
 @router.get("/scoring-params")

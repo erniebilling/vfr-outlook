@@ -44,7 +44,7 @@ function buildPopup(airport: AirportForecast, dayIndex: number): string {
   return `
     <div style="min-width:160px;max-width:min(240px,90vw);font-family:monospace;font-size:12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-        <strong style="color:#60a5fa;font-size:14px">${airport.icao}</strong>
+        <strong style="color:#60a5fa;font-size:14px">${airport.icao}${airport.faa && airport.faa !== airport.icao ? ` / ${airport.faa}` : ''}</strong>
         <span style="color:#9ca3af">${formatDate(day.date)}</span>
       </div>
       <div style="color:#e5e7eb;margin-bottom:6px">${airport.name}</div>

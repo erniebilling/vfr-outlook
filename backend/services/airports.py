@@ -27,24 +27,25 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return R * 2 * math.asin(math.sqrt(a))
 
 
-def get_airport(icao: str) -> Optional[dict]:
-    icao = icao.upper()
+def get_airport(code: str) -> Optional[dict]:
+    """Look up an airport by ICAO code, FAA ident, or METAR station ID."""
+    code = code.upper()
     for ap in _load():
-        if ap["icao"] == icao:
+        if ap["icao"] == code or ap.get("faa") == code or ap.get("metar_id") == code:
             return ap
     return None
 
 
 def search_airports(query: str, limit: int = 10) -> list[dict]:
     q = query.upper()
-    icao_matches = []
+    code_matches = []
     name_matches = []
     for ap in _load():
-        if q in ap["icao"]:
-            icao_matches.append(ap)
+        if q in ap["icao"] or q in ap.get("faa", ""):
+            code_matches.append(ap)
         elif q in ap["name"].upper():
             name_matches.append(ap)
-    combined = icao_matches + name_matches
+    combined = code_matches + name_matches
     return combined[:limit]
 
 

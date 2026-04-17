@@ -7,6 +7,19 @@ Run from the data/ directory:
 Sources:
     https://davidmegginson.github.io/ourairports-data/airports.csv
     https://davidmegginson.github.io/ourairports-data/runways.csv
+
+Schema
+------
+Each airport object has:
+  icao  – proper 4-letter ICAO code (e.g. "KPVF"), or the local FAA ident
+          when no ICAO code exists (e.g. "7S5").
+  faa   – FAA / local identifier (e.g. "S39"). Equals icao for airports whose
+          ident already is their ICAO code.
+
+OurAirports sometimes has two rows for the same physical airport: one with the
+local ident (ident="S39", gps_code="", icao_code="") and one with the ICAO
+code (ident="S39", gps_code="KPVF", icao_code="KPVF").  The build step
+collapses these into a single entry with icao="KPVF" and faa="S39".
 """
 
 import csv
@@ -77,48 +90,105 @@ def main():
             "he_hdg":    he_hdg,
         })
 
-    # Build airport list
-    airports = []
-    for ap in airports_raw:
-        ap_type = ap.get("type", "")
-        if ap_type not in KEEP_TYPES:
-            continue
+    # ── Pass 1: collect all candidate rows ───────────────────────────────────
+    # Key: (lat_4dp, lon_4dp) → best row dict.  "Best" = has an icao_code.
+    # We also track the FAA ident (local ident) for each location.
+    #
+    # Some airports appear twice: once as the local ident row (icao_code=""),
+    # and once as the ICAO row (icao_code="KPVF", gps_code="KPVF").
+    # We collapse them: prefer the ICAO row for the icao field, keep the local
+    # ident as faa.
 
-        gps_code = ap.get("gps_code", "").strip().upper()
-        raw_ident = ap.get("ident", "").strip().upper()
-        ident = gps_code or raw_ident
-        if not ident:
-            continue
+    # coord_key → {"icao_row": ap, "faa_row": ap}
+    by_coord: dict[tuple, dict] = {}
 
-        # US airports only (K prefix, or US territories P/T/M prefixes, and Alaska/Hawaii)
-        if not (
-            ident.startswith("K") or
+    def _is_us(ap: dict, ident: str) -> bool:
+        # K-prefixed US airports are exactly 4 characters (e.g. KBDN, KSEA).
+        # Longer K-prefixed idents (e.g. KE-0005) are non-US.
+        if (
+            (ident.startswith("K") and len(ident) == 4) or
             ident.startswith("PA") or  # Alaska
             ident.startswith("PH") or  # Hawaii
             ident.startswith("PG") or  # Guam
             ident.startswith("TJ") or  # Puerto Rico
             ident.startswith("MB")     # Bahamas adj
         ):
-            # Also include domestic identifiers (no K) that are in US
-            country = ap.get("iso_country", "")
-            if country != "US":
-                continue
+            return True
+        return ap.get("iso_country", "") == "US"
 
-        lat = lon = elev = None
+    for ap in airports_raw:
+        ap_type = ap.get("type", "")
+        if ap_type not in KEEP_TYPES:
+            continue
+
+        gps_code  = ap.get("gps_code",  "").strip().upper()
+        raw_ident = ap.get("ident",     "").strip().upper()
+        icao_code = ap.get("icao_code", "").strip().upper() or None
+
+        ident = gps_code or raw_ident
+        if not ident:
+            continue
+        if not _is_us(ap, ident):
+            continue
+
         try:
-            lat  = round(float(ap["latitude_deg"]),  4)
-            lon  = round(float(ap["longitude_deg"]), 4)
+            lat = round(float(ap["latitude_deg"]),  4)
+            lon = round(float(ap["longitude_deg"]), 4)
         except (ValueError, KeyError):
-            continue  # skip if no coords
+            continue
+
+        key = (lat, lon)
+        entry = by_coord.setdefault(key, {"icao_row": None, "faa_row": None, "ap_type": ap_type})
+
+        if icao_code:
+            # This row carries the proper ICAO code — prefer it as the icao field.
+            entry["icao_row"] = ap
+        else:
+            # Local-ident row — keep as faa candidate (prefer shorter/earlier if dupes).
+            if entry["faa_row"] is None:
+                entry["faa_row"] = ap
+
+    # ── Pass 2: emit one record per physical airport ─────────────────────────
+    airports = []
+    for (lat, lon), entry in by_coord.items():
+        icao_row = entry["icao_row"]
+        faa_row  = entry["faa_row"]
+        ap_type  = entry["ap_type"]
+
+        # Choose which row drives the primary fields
+        primary = icao_row or faa_row
+        if primary is None:
+            continue
+
+        gps_code  = primary.get("gps_code",  "").strip().upper()
+        raw_ident = primary.get("ident",     "").strip().upper()
+        icao_code = primary.get("icao_code", "").strip().upper() or None
+
+        # icao: use the proper ICAO code if available, else fall back to local ident
+        icao = icao_code or gps_code or raw_ident
+
+        # faa: the local ident from whichever row has it; fall back to icao
+        if faa_row is not None:
+            faa_gps  = faa_row.get("gps_code",  "").strip().upper()
+            faa_raw  = faa_row.get("ident",     "").strip().upper()
+            faa = faa_gps or faa_raw or icao
+        else:
+            faa = icao
+
+        elev = None
         try:
-            elev = int(float(ap["elevation_ft"])) if ap.get("elevation_ft") else None
+            elev = int(float(primary.get("elevation_ft") or "")) if primary.get("elevation_ft") else None
         except ValueError:
             pass
 
-        # Runways may be indexed under gps_code (e.g. "S39") or raw ident (e.g. "KS39")
-        runways = runways_by_ident.get(ident) or runways_by_ident.get(raw_ident) or []
+        # Runways indexed under gps_code, raw ident, or icao
+        candidates = {gps_code, raw_ident, icao, faa} - {""}
+        runways: list[dict] = []
+        for c in candidates:
+            runways = runways_by_ident.get(c, [])
+            if runways:
+                break
 
-        # Compute derived summaries useful for filtering
         max_rwy_length = max((r["length_ft"] for r in runways if r["length_ft"]), default=None)
         _HARD_PREFIXES = ("ASP", "CON", "PEM", "CONC", "ASPH")
         has_hard_surface = any(
@@ -126,11 +196,29 @@ def main():
             for r in runways
         )
 
-        icao_code = ap.get("icao_code", "").strip().upper() or None
+        # has_metar: true when the airport has (or can derive) a 4-letter ICAO
+        # station ID for the Aviation Weather API.
+        # - Explicit icao_code field: use it directly.
+        # - 4-letter K-prefixed ident: already ICAO.
+        # - 3-letter domestic ident (e.g. "S39"): the METAR API accepts "K"+ident.
+        # Derive the station ID used for METAR queries.
+        if icao_code:
+            metar_id = icao_code
+        elif len(icao) == 4 and icao[0].isalpha():
+            metar_id = icao
+        elif len(icao) == 3 and icao[0].isalpha():
+            # 3-char domestic: Aviation Weather accepts K+ident
+            metar_id = "K" + icao
+        else:
+            metar_id = None
+
+        has_metar = metar_id is not None
 
         airports.append({
-            "icao":             ident,
-            "name":             ap.get("name", "").strip(),
+            "icao":             icao,
+            "faa":              faa,
+            "metar_id":         metar_id,
+            "name":             primary.get("name", "").strip(),
             "lat":              lat,
             "lon":              lon,
             "elev":             elev,
@@ -138,7 +226,7 @@ def main():
             "runways":          runways,
             "max_rwy_ft":       max_rwy_length,
             "has_hard_surface": has_hard_surface,
-            "has_metar":        icao_code is not None,
+            "has_metar":        has_metar,
         })
 
     airports.sort(key=lambda a: a["icao"])

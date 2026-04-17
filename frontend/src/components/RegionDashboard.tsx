@@ -126,6 +126,87 @@ function ScorePill({
   )
 }
 
+function MetarTooltip({ airport, x, y }: { airport: AirportForecast; x: number; y: number }) {
+  const day = airport.daily_forecasts[0]
+  return (
+    <div className="fixed w-56 max-w-[90vw] bg-gray-800 border border-gray-600 rounded-lg shadow-xl text-xs text-left pointer-events-none"
+      style={{ left: x, top: y, transform: 'translate(-50%, -100%) translateY(-8px)', zIndex: 1000 }}
+    >
+      <div className="px-3 py-2 border-b border-gray-700 flex items-center justify-between gap-2">
+        <span className="font-mono font-bold text-blue-400">{airport.icao}</span>
+        <span className="text-gray-400">Current</span>
+      </div>
+      <div className="px-3 py-2 space-y-1 text-gray-300">
+        {day && (
+          <>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Score</span>
+              <span className={`font-bold ${scoreLabel(airport.current_score) === 'VFR' ? 'text-green-400' : scoreLabel(airport.current_score) === 'MVFR' ? 'text-lime-400' : 'text-orange-400'}`}>
+                {airport.current_score.toFixed(0)} — {scoreLabel(airport.current_score)}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-500">Wind</span>
+              <span>
+                {day.wind_dir != null ? `${day.wind_dir}°@` : ''}{day.wind_kt.toFixed(0)} kt
+                {day.gust_kt > 0 ? ` G${day.gust_kt.toFixed(0)}` : ''}
+              </span>
+            </div>
+            {day.visibility_sm != null && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Vis</span>
+                <span>{day.visibility_sm} sm</span>
+              </div>
+            )}
+            {day.ceiling_ft != null && (
+              <div className="flex justify-between">
+                <span className="text-gray-500">Ceiling</span>
+                <span>{day.ceiling_ft.toLocaleString()} ft</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-gray-500">Precip</span>
+              <span>{day.precip_probability.toFixed(0)}%</span>
+            </div>
+            {day.issues.length > 0 && (
+              <div className="pt-1 border-t border-gray-700 text-orange-400 space-y-0.5">
+                {day.issues.map((iss, i) => <div key={i}>⚠ {iss}</div>)}
+              </div>
+            )}
+          </>
+        )}
+        {airport.current_metar && (
+          <div className="pt-1 border-t border-gray-700 font-mono text-gray-500 break-all leading-tight">
+            {airport.current_metar}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function MetarPill({ airport }: { airport: AirportForecast }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const pillRef = useRef<HTMLDivElement>(null)
+
+  function handleMouseEnter() {
+    if (pillRef.current) {
+      const r = pillRef.current.getBoundingClientRect()
+      setPos({ x: r.left + r.width / 2, y: r.top })
+    }
+  }
+
+  return (
+    <div ref={pillRef} onMouseEnter={handleMouseEnter} onMouseLeave={() => setPos(null)}>
+      <div className={`${scoreBgClass(airport.current_score)} text-gray-900 text-xs font-bold text-center rounded px-2 py-1 cursor-default`}>
+        {airport.current_score.toFixed(0)}
+      </div>
+      <div className="text-gray-600 text-xs text-center mt-0.5">now</div>
+      {pos && <MetarTooltip airport={airport} x={pos.x} y={pos.y} />}
+    </div>
+  )
+}
+
 function AirportRow({
   airport, days, onClick, selected, useNm, activeDayIndex,
 }: {
@@ -153,16 +234,10 @@ function AirportRow({
       </td>
 
       <td className="py-2 pr-3">
-        {airport.current_metar ? (
-          <>
-            <div className={`${scoreBgClass(airport.current_score)} text-gray-900 text-xs font-bold text-center rounded px-2 py-1`}>
-              {airport.current_score.toFixed(0)}
-            </div>
-            <div className="text-gray-600 text-xs text-center mt-0.5">now</div>
-          </>
-        ) : (
-          <div className="text-gray-700 text-xs text-center">—</div>
-        )}
+        {airport.current_metar
+          ? <MetarPill airport={airport} />
+          : <div className="text-gray-700 text-xs text-center">—</div>
+        }
       </td>
 
       {days.map((day, i) => (

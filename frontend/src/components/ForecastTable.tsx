@@ -165,7 +165,12 @@ export default function ForecastTable({ data }: Props) {
     <div className="bg-gray-900 rounded-xl p-6 space-y-4">
       {/* Header */}
       <div className="flex items-baseline gap-3">
-        <h2 className="text-2xl font-bold font-mono text-white">{data.icao}</h2>
+        <h2 className="text-2xl font-bold font-mono text-white">
+          {data.icao}
+          {data.faa && data.faa !== data.icao && (
+            <span className="text-gray-400 text-lg font-normal"> / {data.faa}</span>
+          )}
+        </h2>
         <span className="text-gray-400">{data.name}</span>
         {data.elevation_ft != null && (
           <span className="text-gray-500 text-sm">{data.elevation_ft.toLocaleString()} ft MSL</span>

@@ -564,21 +564,29 @@ async def get_airport_forecast(
     runways: Optional[list[dict]] = None,
     max_rwy_ft: Optional[int] = None,
     has_metar: bool = True,
+    faa: Optional[str] = None,
+    metar_id: Optional[str] = None,
     http_client: Optional[httpx.AsyncClient] = None,
 ) -> AirportForecast:
     """Fetch all weather data for one airport and return a complete AirportForecast.
 
+    Pass ``metar_id`` when it differs from ``icao`` (e.g. icao="S39", metar_id="KS39").
     Pass ``http_client`` to reuse a shared connection pool across a fan-out
     (region / trip queries).  When omitted a short-lived client is created,
     which is fine for single-airport requests.
     """
     import time
+    # The station ID to query the Aviation Weather METAR API.
+    # For airports whose local ident isn't a 4-letter ICAO code, metar_id
+    # holds the derived station ID (e.g. "KS39" for S39).
+    station_id = metar_id or icao
+
     t0 = time.monotonic()
     _forecast_requests.add(1, {"icao": icao})
     _inflight_airports.add(1)
     try:
         async def _fetch(client: httpx.AsyncClient) -> tuple:
-            metar_task = fetch_metar(client, icao) if has_metar else asyncio.sleep(0, result=None)
+            metar_task = fetch_metar(client, station_id) if has_metar else asyncio.sleep(0, result=None)
             noaa_task = fetch_noaa_hourly(client, lat, lon)
             om_task = fetch_open_meteo(client, lat, lon)
             return await asyncio.gather(metar_task, noaa_task, om_task)
@@ -612,6 +620,7 @@ async def get_airport_forecast(
     _forecast_duration.record((time.monotonic() - t0) * 1000, {"icao": icao})
     return AirportForecast(
         icao=icao,
+        faa=faa or icao,
         name=name,
         lat=lat,
         lon=lon,

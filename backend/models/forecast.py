@@ -41,6 +41,7 @@ class Runway(BaseModel):
 
 class AirportForecast(BaseModel):
     icao: str
+    faa: str                            # FAA / local ident (equals icao for K-prefix airports)
     name: str
     lat: float
     lon: float
