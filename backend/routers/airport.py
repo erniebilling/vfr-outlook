@@ -61,6 +61,7 @@ async def airport_forecast(icao: str):
             distance_miles=None,
             runways=info.get("runways", []),
             max_rwy_ft=info.get("max_rwy_ft"),
+            has_metar=info.get("has_metar", True),
         )
         return result
 
@@ -124,6 +125,7 @@ async def region_forecast(
                 distance_miles=a.get("distance_miles"),
                 runways=a.get("runways", []),
                 max_rwy_ft=a.get("max_rwy_ft"),
+                has_metar=a.get("has_metar", True),
                 http_client=http_client,
             )
             for a in all_airports
@@ -235,6 +237,7 @@ async def trip_forecast(
                 distance_miles=a.get("cross_track_miles"),
                 runways=a.get("runways", []),
                 max_rwy_ft=a.get("max_rwy_ft"),
+                has_metar=a.get("has_metar", True),
                 http_client=http_client,
             )
             for a in all_airports

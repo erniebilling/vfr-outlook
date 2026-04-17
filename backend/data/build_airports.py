@@ -125,16 +125,19 @@ def main():
             for r in runways
         )
 
+        icao_code = ap.get("icao_code", "").strip().upper() or None
+
         airports.append({
-            "icao":           ident,
-            "name":           ap.get("name", "").strip(),
-            "lat":            lat,
-            "lon":            lon,
-            "elev":           elev,
-            "type":           ap_type,
-            "runways":        runways,
-            "max_rwy_ft":     max_rwy_length,
+            "icao":             ident,
+            "name":             ap.get("name", "").strip(),
+            "lat":              lat,
+            "lon":              lon,
+            "elev":             elev,
+            "type":             ap_type,
+            "runways":          runways,
+            "max_rwy_ft":       max_rwy_length,
             "has_hard_surface": has_hard_surface,
+            "has_metar":        icao_code is not None,
         })
 
     airports.sort(key=lambda a: a["icao"])

@@ -161,6 +161,9 @@ async def fetch_metar(client: httpx.AsyncClient, icao: str) -> Optional[dict]:
                     if resp.status_code == 429:
                         _rate_limit_counter.add(1, attrs)
                         _log.warning("METAR rate-limited (429) for %s", icao)
+                    elif resp.status_code == 204 or not resp.content:
+                        # No METAR available for this station (private/uncontrolled field)
+                        _external_call_duration.record((time.monotonic() - t0) * 1000, attrs)
                     else:
                         resp.raise_for_status()
                         data = resp.json()
@@ -560,6 +563,7 @@ async def get_airport_forecast(
     distance_miles: Optional[float] = None,
     runways: Optional[list[dict]] = None,
     max_rwy_ft: Optional[int] = None,
+    has_metar: bool = True,
     http_client: Optional[httpx.AsyncClient] = None,
 ) -> AirportForecast:
     """Fetch all weather data for one airport and return a complete AirportForecast.
@@ -574,7 +578,7 @@ async def get_airport_forecast(
     _inflight_airports.add(1)
     try:
         async def _fetch(client: httpx.AsyncClient) -> tuple:
-            metar_task = fetch_metar(client, icao)
+            metar_task = fetch_metar(client, icao) if has_metar else asyncio.sleep(0, result=None)
             noaa_task = fetch_noaa_hourly(client, lat, lon)
             om_task = fetch_open_meteo(client, lat, lon)
             return await asyncio.gather(metar_task, noaa_task, om_task)
