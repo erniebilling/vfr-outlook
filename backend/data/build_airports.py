@@ -120,8 +120,9 @@ def main():
 
         # Compute derived summaries useful for filtering
         max_rwy_length = max((r["length_ft"] for r in runways if r["length_ft"]), default=None)
+        _HARD_PREFIXES = ("ASP", "CON", "PEM", "CONC", "ASPH")
         has_hard_surface = any(
-            r["surface"] and any(s in (r["surface"] or "") for s in ("ASPH", "CONC", "TURF-GRVL", "GRVL-ASPH"))
+            r["surface"] and any(r["surface"].startswith(p) for p in _HARD_PREFIXES)
             for r in runways
         )
 
