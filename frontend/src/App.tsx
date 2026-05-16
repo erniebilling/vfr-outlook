@@ -88,7 +88,10 @@ export default function App() {
                   title="Show airports near my current location"
                   className="shrink-0 px-3 py-2 rounded-lg border border-gray-600 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-gray-300 text-sm"
                 >
-                  {geoLoading || (isLoading && useLocation) ? '…' : '⊕ My Location'}
+                  {geoLoading || (isLoading && useLocation)
+                    ? '…'
+                    : <><span>⊕</span><span className="hidden sm:inline"> My Location</span></>
+                  }
                 </button>
               </div>
             )}
