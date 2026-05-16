@@ -292,6 +292,77 @@ async def trip_forecast(
         )
 
 
+@router.get("/region/nearby", response_model=RegionResponse)
+async def region_nearby(
+    request: Request,
+    lat: float = Query(..., ge=-90, le=90, description="Latitude"),
+    lon: float = Query(..., ge=-180, le=180, description="Longitude"),
+    radius: int = Query(_DEFAULT_RADIUS, ge=25, le=300, description="Radius in miles"),
+    max_airports: int = Query(_DEFAULT_MAX_AIRPORTS, ge=1, le=_HARD_MAX_AIRPORTS, description="Maximum number of airports to return"),
+    min_rwy_ft: Optional[int] = Query(None, ge=0, description="Minimum runway length in feet"),
+    hard_surface: bool = Query(True, description="Only include airports with hard surface runways"),
+):
+    """
+    Return 14-day forecasts for airports within `radius` miles of a lat/lon coordinate.
+    The nearest airport is used as the base.
+    """
+    _region_requests.add(1, {"icao": "nearby", "radius_miles": str(radius)})
+
+    with _tracer.start_as_current_span("region_nearby") as span:
+        span.set_attribute("region.lat", lat)
+        span.set_attribute("region.lon", lon)
+        span.set_attribute("region.radius_miles", radius)
+        span.set_attribute("region.max_airports", max_airports)
+
+        nearby_all = airports_within_radius(
+            lat=lat,
+            lon=lon,
+            radius_miles=radius,
+            max_results=10000,
+            min_rwy_ft=min_rwy_ft,
+            hard_surface=hard_surface,
+        )
+        if not nearby_all:
+            raise HTTPException(status_code=404, detail="No airports found near your location.")
+
+        nearby = nearby_all[:max_airports]
+        base = nearby[0]
+
+        http_client = getattr(request.app.state, "http_client", None)
+        tasks = [
+            get_airport_forecast(
+                icao=a["icao"],
+                name=a["name"],
+                lat=a["lat"],
+                lon=a["lon"],
+                elevation_ft=a.get("elev"),
+                distance_miles=a.get("distance_miles"),
+                runways=a.get("runways", []),
+                max_rwy_ft=a.get("max_rwy_ft"),
+                has_metar=a.get("has_metar", True),
+                faa=a.get("faa"),
+                metar_id=a.get("metar_id"),
+                http_client=http_client,
+            )
+            for a in nearby
+        ]
+        forecasts = await asyncio.gather(*tasks, return_exceptions=True)
+        valid = [f for f in forecasts if isinstance(f, AirportForecast)]
+
+        span.set_attribute("region.airports_returned", len(valid))
+        _region_airports_returned.record(len(valid), {"icao": "nearby", "radius_miles": str(radius)})
+
+        return RegionResponse(
+            base_airport=base["icao"],
+            base_lat=lat,
+            base_lon=lon,
+            radius_miles=radius,
+            airport_count=len(valid),
+            airports=valid,
+            generated_at=datetime.now(timezone.utc),
+        )
+
+
 @router.get("/airports/search")
 async def search_airports(q: str = Query(..., min_length=2)):
     """Full-text search over OurAirports database. Returns ICAO, FAA ident, and name."""
