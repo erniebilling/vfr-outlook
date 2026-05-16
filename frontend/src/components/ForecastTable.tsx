@@ -161,6 +161,8 @@ function RunwayPanel({ runways, day }: { runways: Runway[]; day: DayForecast }) 
 }
 
 export default function ForecastTable({ data }: Props) {
+  const rawId = data.faa || data.icao
+  const airnavId = rawId.length === 4 && rawId[0] === 'K' ? rawId.slice(1) : rawId
   return (
     <div className="bg-gray-900 rounded-xl p-6 space-y-4">
       {/* Header */}
@@ -175,6 +177,14 @@ export default function ForecastTable({ data }: Props) {
         {data.elevation_ft != null && (
           <span className="text-gray-500 text-sm">{data.elevation_ft.toLocaleString()} ft MSL</span>
         )}
+        <a
+          href={`https://www.airnav.com/airport/${airnavId}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-blue-400 hover:text-blue-300 ml-auto"
+        >
+          AirNav ↗
+        </a>
       </div>
 
       {/* Runways */}
