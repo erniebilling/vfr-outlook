@@ -454,12 +454,19 @@ def _metar_to_day_forecast(metar: dict) -> DayForecast:
             vis_sm = float(vis_sm)
         except Exception:
             vis_sm = None
-    ceiling_ft = metar.get("ceil")
-    if ceiling_ft is not None:
-        try:
-            ceiling_ft = int(ceiling_ft)
-        except Exception:
-            ceiling_ft = None
+    # Derive ceiling from clouds array: lowest BKN or OVC layer defines the ceiling.
+    # The API's "ceil" field is often absent; SCT and FEW are not ceilings.
+    ceiling_ft: Optional[int] = None
+    clouds = metar.get("clouds") or []
+    for layer in clouds:
+        cover = (layer.get("cover") or "").upper()
+        if cover in ("BKN", "OVC"):
+            try:
+                base = int(layer["base"])
+                if ceiling_ft is None or base < ceiling_ft:
+                    ceiling_ft = base
+            except Exception:
+                pass
 
     score, issues = compute_vfr_score(
         wind_kt=wind_kt,
